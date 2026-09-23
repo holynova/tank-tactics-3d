@@ -2,6 +2,8 @@
 
 一个以移动端为主的 Three.js 回合制战术游戏。规则基于 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)，表现层从 2D 坦克棋盘重做为可切换主题的低多边形 3D 沙盘。
 
+在线试玩：[GitHub Pages](https://holynova.github.io/tank-tactics-3d/)
+
 ## 功能
 
 - 与参考项目一致的 4×4 移动、二打一集火、拥挤保护和胜负规则
@@ -28,6 +30,7 @@ npm run dev
 npm test
 npx tsc --noEmit
 npm run build
+npm run build:pages
 ```
 
 ## 目录
@@ -46,4 +49,3 @@ npm run build
 ## 致谢
 
 玩法与规则参考 MIT License 项目 [Tank Tactics Game](https://github.com/holynova/tank-tactics-game)。本项目为独立的 3D 重制实现。
-

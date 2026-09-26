@@ -299,6 +299,10 @@ export function TacticalGame() {
         <AccessibleGrid onPress={game.pressCell} pieces={game.pieces} />
 
         <div className="board-vignette" aria-hidden="true" />
+        <div className="camera-hint" aria-label="可调整战场视角">
+          <span className="camera-hint__mobile">单指旋转 · 双指缩放</span>
+          <span className="camera-hint__desktop">拖动旋转 · 滚轮缩放</span>
+        </div>
         <div className="battle-feed" aria-live="polite">
           {game.events.slice(-2).map((event) => (
             <p key={event.id} data-tone={event.tone}>{event.text}</p>

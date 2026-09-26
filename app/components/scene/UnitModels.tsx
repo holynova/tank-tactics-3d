@@ -1,6 +1,8 @@
 "use client";
 
-import { Float } from "@react-three/drei";
+import { Float, useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import type { PlayerColor, ThemeId } from "../../game/types";
 import { THEMES } from "../../game/themes";
 import * as THREE from "three";
@@ -10,9 +12,10 @@ export interface GameUnitProps {
   color: PlayerColor;
   selected: boolean;
   disabled?: boolean;
+  variant?: number;
+  aimAngle?: number;
+  firing?: boolean;
 }
-
-type SurfaceFinish = "body" | "trim" | "accent" | "glass";
 
 interface UnitPalette {
   body: string;
@@ -21,309 +24,355 @@ interface UnitPalette {
   glass: string;
   selected: boolean;
   disabled: boolean;
-  opacity: number;
 }
 
-interface ModelProps {
-  palette: UnitPalette;
+const MODEL_ROOT = `${import.meta.env.BASE_URL}models/`;
+const TANK_MODEL = `${MODEL_ROOT}main-battle-tank.glb`;
+const SPG_MODEL = `${MODEL_ROOT}self-propelled-gun.glb`;
+const TRACK_GEOMETRY = new THREE.BoxGeometry(0.16, 0.16, 0.88);
+const ROLLER_GEOMETRY = new THREE.CylinderGeometry(0.073, 0.073, 0.065, 10);
+const SHOULDER_GEOMETRY = new THREE.BoxGeometry(0.12, 0.11, 0.64);
+const UNIT_MARKER_GEOMETRY = new THREE.BoxGeometry(0.065, 0.045, 0.04);
+const PLOW_GEOMETRY = new THREE.BoxGeometry(0.72, 0.105, 0.15);
+
+function addStaticInstances(
+  parent: THREE.Group,
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  transforms: Array<{ position: THREE.Vector3; rotation?: THREE.Euler }>,
+) {
+  const instances = new THREE.InstancedMesh(geometry, material, transforms.length);
+  const object = new THREE.Object3D();
+  transforms.forEach(({ position, rotation }, index) => {
+    object.position.copy(position);
+    object.rotation.copy(rotation ?? new THREE.Euler());
+    object.updateMatrix();
+    instances.setMatrixAt(index, object.matrix);
+  });
+  instances.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  instances.castShadow = true;
+  instances.receiveShadow = true;
+  parent.add(instances);
+  return instances;
 }
 
-const TRIM_COLORS: Record<ThemeId, string> = {
-  lunar: "#11192b",
-  sky: "#4c5c5d",
-  abyss: "#082b35",
-};
-
-const GLASS_COLORS: Record<ThemeId, string> = {
-  lunar: "#1a294b",
-  sky: "#537d83",
-  abyss: "#0b485d",
-};
-
-function getPalette(
-  themeId: ThemeId,
-  color: PlayerColor,
-  selected: boolean,
-  disabled: boolean,
-): UnitPalette {
+function getPalette(themeId: ThemeId, color: PlayerColor, selected: boolean, disabled: boolean): UnitPalette {
   const theme = THEMES[themeId];
-
   return {
     body: color === "red" ? theme.red : theme.blue,
-    trim: TRIM_COLORS[themeId],
+    trim: themeId === "lunar" ? "#18202c" : themeId === "sky" ? "#242b38" : "#192530",
     accent: theme.accent,
-    glass: GLASS_COLORS[themeId],
+    glass: color === "red" ? "#ffca75" : "#7cecff",
     selected: selected && !disabled,
     disabled,
-    opacity: disabled ? 0.42 : 1,
   };
 }
 
-interface SurfaceProps {
-  finish: SurfaceFinish;
-  palette: UnitPalette;
-  roughness?: number;
-  metalness?: number;
-  alpha?: number;
-}
-
-function Surface({
-  finish,
-  palette,
-  roughness = 0.68,
-  metalness = 0.15,
-  alpha,
-}: SurfaceProps) {
-  const materialColor = palette[finish];
-  const opacity = alpha ?? palette.opacity;
-  const transparent = palette.disabled || alpha !== undefined;
-  const isSelectedAccent = finish === "accent" && palette.selected;
-
-  return (
-    <meshStandardMaterial
-      color={materialColor}
-      roughness={roughness}
-      metalness={metalness}
-      flatShading
-      transparent={transparent}
-      opacity={opacity}
-      depthWrite={!transparent}
-      emissive={isSelectedAccent ? palette.accent : "#000000"}
-      emissiveIntensity={isSelectedAccent ? 0.42 : 0}
-    />
-  );
-}
-
-function LunarMech({ palette }: ModelProps) {
+function SelectionFeedback({ palette }: { palette: UnitPalette }) {
+  if (!palette.selected) return null;
   return (
     <group>
-      <mesh position={[0, 0.12, 0]}>
-        <cylinderGeometry args={[0.33, 0.38, 0.16, 8]} />
-        <Surface finish="trim" palette={palette} roughness={0.48} metalness={0.72} />
-      </mesh>
-
-      <mesh position={[-0.13, 0.22, 0]}>
-        <boxGeometry args={[0.16, 0.27, 0.2]} />
-        <Surface finish="trim" palette={palette} roughness={0.5} metalness={0.68} />
-      </mesh>
-      <mesh position={[0.13, 0.22, 0]}>
-        <boxGeometry args={[0.16, 0.27, 0.2]} />
-        <Surface finish="trim" palette={palette} roughness={0.5} metalness={0.68} />
-      </mesh>
-      <mesh position={[-0.13, 0.1, 0.08]}>
-        <boxGeometry args={[0.19, 0.08, 0.28]} />
-        <Surface finish="body" palette={palette} roughness={0.56} metalness={0.58} />
-      </mesh>
-      <mesh position={[0.13, 0.1, 0.08]}>
-        <boxGeometry args={[0.19, 0.08, 0.28]} />
-        <Surface finish="body" palette={palette} roughness={0.56} metalness={0.58} />
-      </mesh>
-
-      <mesh position={[0, 0.5, 0]}>
-        <boxGeometry args={[0.46, 0.52, 0.34]} />
-        <Surface finish="body" palette={palette} roughness={0.52} metalness={0.62} />
-      </mesh>
-      <mesh position={[0, 0.52, 0.18]}>
-        <boxGeometry args={[0.26, 0.12, 0.035]} />
-        <Surface finish="accent" palette={palette} roughness={0.32} metalness={0.2} />
-      </mesh>
-
-      <mesh position={[-0.3, 0.57, 0]} rotation={[0, 0, -0.12]}>
-        <boxGeometry args={[0.18, 0.25, 0.3]} />
-        <Surface finish="trim" palette={palette} roughness={0.46} metalness={0.64} />
-      </mesh>
-      <mesh position={[0.3, 0.57, 0]} rotation={[0, 0, 0.12]}>
-        <boxGeometry args={[0.18, 0.25, 0.3]} />
-        <Surface finish="trim" palette={palette} roughness={0.46} metalness={0.64} />
-      </mesh>
-
-      <mesh position={[0, 0.81, 0.01]}>
-        <boxGeometry args={[0.34, 0.25, 0.29]} />
-        <Surface finish="trim" palette={palette} roughness={0.44} metalness={0.7} />
-      </mesh>
-      <mesh position={[0, 0.8, 0.17]}>
-        <boxGeometry args={[0.2, 0.06, 0.025]} />
-        <Surface finish="accent" palette={palette} roughness={0.28} metalness={0.2} />
-      </mesh>
-      <mesh position={[0, 1.01, -0.01]}>
-        <cylinderGeometry args={[0.025, 0.025, 0.18, 6]} />
-        <Surface finish="accent" palette={palette} roughness={0.28} metalness={0.34} />
-      </mesh>
-
-      <mesh position={[0.3, 0.67, 0.17]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.065, 0.075, 0.38, 8]} />
-        <Surface finish="body" palette={palette} roughness={0.48} metalness={0.64} />
-      </mesh>
-      <mesh position={[0.3, 0.67, 0.37]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.084, 0.084, 0.045, 8]} />
-        <Surface finish="accent" palette={palette} roughness={0.3} metalness={0.26} />
-      </mesh>
-    </group>
-  );
-}
-
-function SkyGuardian({ palette }: ModelProps) {
-  return (
-    <group>
-      <mesh position={[0, 0.12, 0]}>
-        <cylinderGeometry args={[0.42, 0.35, 0.16, 7]} />
-        <Surface finish="trim" palette={palette} roughness={0.9} metalness={0.02} />
-      </mesh>
-      <mesh position={[0, 0.28, 0]} scale={[1, 0.65, 0.86]}>
-        <dodecahedronGeometry args={[0.42, 0]} />
-        <Surface finish="body" palette={palette} roughness={0.94} metalness={0.01} />
-      </mesh>
-
-      <mesh position={[-0.3, 0.52, -0.01]} rotation={[0.1, 0, -0.24]}>
-        <octahedronGeometry args={[0.2, 0]} />
-        <Surface finish="body" palette={palette} roughness={0.92} metalness={0.01} />
-      </mesh>
-      <mesh position={[0.3, 0.52, -0.01]} rotation={[-0.1, 0, 0.24]}>
-        <octahedronGeometry args={[0.2, 0]} />
-        <Surface finish="body" palette={palette} roughness={0.92} metalness={0.01} />
-      </mesh>
-      <mesh position={[-0.34, 0.25, 0.03]} scale={[0.72, 1.15, 0.75]}>
-        <icosahedronGeometry args={[0.16, 0]} />
-        <Surface finish="trim" palette={palette} roughness={0.92} metalness={0.01} />
-      </mesh>
-      <mesh position={[0.34, 0.25, 0.03]} scale={[0.72, 1.15, 0.75]}>
-        <icosahedronGeometry args={[0.16, 0]} />
-        <Surface finish="trim" palette={palette} roughness={0.92} metalness={0.01} />
-      </mesh>
-
-      <mesh position={[0, 0.66, 0.01]} scale={[0.82, 1.12, 0.72]}>
-        <coneGeometry args={[0.29, 0.34, 5]} />
-        <Surface finish="body" palette={palette} roughness={0.92} metalness={0.01} />
-      </mesh>
-      <mesh position={[0, 0.7, 0.25]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.08, 0.18, 4]} />
-        <Surface finish="accent" palette={palette} roughness={0.66} metalness={0.02} />
-      </mesh>
-      <mesh position={[0, 0.66, 0.27]}>
-        <planeGeometry args={[0.2, 0.09]} />
-        <Surface finish="accent" palette={palette} roughness={0.52} metalness={0.01} />
-      </mesh>
-
-      <mesh position={[-0.26, 0.72, -0.05]} rotation={[0, 0, -0.44]}>
-        <coneGeometry args={[0.1, 0.34, 4]} />
-        <Surface finish="trim" palette={palette} roughness={0.88} metalness={0.01} />
-      </mesh>
-      <mesh position={[0.26, 0.72, -0.05]} rotation={[0, 0, 0.44]}>
-        <coneGeometry args={[0.1, 0.34, 4]} />
-        <Surface finish="trim" palette={palette} roughness={0.88} metalness={0.01} />
-      </mesh>
-    </group>
-  );
-}
-
-function AbyssSubmersible({ palette }: ModelProps) {
-  return (
-    <group>
-      <mesh position={[0, 0.34, 0]} scale={[0.86, 0.56, 1.18]}>
-        <sphereGeometry args={[0.43, 8, 5]} />
-        <Surface finish="body" palette={palette} roughness={0.36} metalness={0.72} />
-      </mesh>
-      <mesh position={[0, 0.36, -0.45]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.15, 0.19, 0.16, 8]} />
-        <Surface finish="trim" palette={palette} roughness={0.34} metalness={0.76} />
-      </mesh>
-      <mesh position={[0, 0.36, -0.57]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.075, 0.075, 0.16, 8]} />
-        <Surface finish="accent" palette={palette} roughness={0.28} metalness={0.32} />
-      </mesh>
-
-      <mesh position={[0, 0.56, 0.08]} scale={[0.9, 0.68, 1.08]}>
-        <sphereGeometry args={[0.22, 8, 4]} />
-        <Surface
-          finish="glass"
-          palette={palette}
-          roughness={0.18}
-          metalness={0.46}
-          alpha={palette.disabled ? 0.25 : 0.7}
+      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.48, 0.53, 48]} />
+        <meshBasicMaterial
+          color={palette.accent}
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+          toneMapped={false}
+          blending={THREE.AdditiveBlending}
         />
       </mesh>
-      <mesh position={[0, 0.56, 0.3]} rotation={[0, 0, 0]}>
-        <torusGeometry args={[0.18, 0.025, 5, 8]} />
-        <Surface finish="accent" palette={palette} roughness={0.26} metalness={0.26} />
-      </mesh>
-
-      <mesh position={[-0.33, 0.28, 0.02]} rotation={[0, 0, -0.2]}>
-        <boxGeometry args={[0.34, 0.06, 0.28]} />
-        <Surface finish="trim" palette={palette} roughness={0.34} metalness={0.68} />
-      </mesh>
-      <mesh position={[0.33, 0.28, 0.02]} rotation={[0, 0, 0.2]}>
-        <boxGeometry args={[0.34, 0.06, 0.28]} />
-        <Surface finish="trim" palette={palette} roughness={0.34} metalness={0.68} />
-      </mesh>
-      <mesh position={[0, 0.58, -0.1]} rotation={[0.16, 0, 0]}>
-        <boxGeometry args={[0.08, 0.16, 0.24]} />
-        <Surface finish="trim" palette={palette} roughness={0.3} metalness={0.7} />
-      </mesh>
-
-      <mesh position={[0, 0.34, 0.47]}>
-        <sphereGeometry args={[0.075, 8, 4]} />
-        <Surface finish="accent" palette={palette} roughness={0.2} metalness={0.25} />
-      </mesh>
-      <mesh position={[0, 0.34, 0.52]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.11, 0.11, 0.028, 8]} />
-        <Surface finish="accent" palette={palette} roughness={0.22} metalness={0.2} />
+      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.59, 0.605, 48]} />
+        <meshBasicMaterial color={palette.accent} transparent opacity={0.4} depthWrite={false} />
       </mesh>
     </group>
   );
 }
 
-function SelectionFeedback({ palette }: ModelProps) {
-  if (!palette.selected) return null;
+function recolorAsset(scene: THREE.Group, palette: UnitPalette, model: string) {
+  const clone = scene.clone(true);
+  const ownedMaterials = new Set<THREE.Material>();
+  const modelRoot = clone.children.find((child) => child.name === model) ?? clone;
+
+  // The source models expose turret parts as named, separate GLTF nodes. Gather
+  // those pieces around their native pivot so the barrel can traverse to aim.
+  const pivot = new THREE.Group();
+  pivot.name = "animated-cannon-turret";
+  pivot.position.set(0, model === "main-battle-tank" ? 2.09 : 2.08, 0);
+  const turretParts = modelRoot.children.filter((child) => child.name === "turret");
+  for (const part of turretParts) {
+    part.position.sub(pivot.position);
+    modelRoot.remove(part);
+    pivot.add(part);
+  }
+  if (turretParts.length) modelRoot.add(pivot);
+
+  const bounds = new THREE.Box3().setFromObject(clone);
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+  const scale = 1.17 / Math.max(size.z, 0.001);
+  clone.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+
+  clone.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = true;
+    object.receiveShadow = true;
+    const tintMaterial = (source: THREE.Material) => {
+      const material = source.clone();
+      ownedMaterials.add(material);
+      if (material instanceof THREE.MeshStandardMaterial) {
+        if (material.name === "olive") material.color.lerp(new THREE.Color(palette.body), 0.78);
+        else if (material.name === "oliveDark") material.color.lerp(new THREE.Color(palette.body), 0.26);
+        else if (material.name === "steel") material.color.lerp(new THREE.Color(palette.trim), 0.1);
+        if (palette.selected && (material.name === "olive" || material.name === "oliveDark")) {
+          material.emissive.set(palette.accent);
+          material.emissiveIntensity = 0.14;
+        }
+        if (palette.disabled) {
+          material.transparent = true;
+          material.opacity = 0.3;
+          material.depthWrite = false;
+        }
+      }
+      return material;
+    };
+    object.material = Array.isArray(object.material)
+      ? object.material.map(tintMaterial)
+      : tintMaterial(object.material);
+  });
+
+  const normalized = new THREE.Group();
+  normalized.add(clone);
+  const trackMaterial = new THREE.MeshStandardMaterial({ color: palette.trim, metalness: 0.78, roughness: 0.46 });
+  ownedMaterials.add(trackMaterial);
+  for (const side of [-1, 1]) {
+    const track = new THREE.Mesh(TRACK_GEOMETRY, trackMaterial);
+    track.position.set(side * 0.32, 0.095, -0.015);
+    track.castShadow = true;
+    normalized.add(track);
+  }
+  const rollerMaterial = new THREE.MeshStandardMaterial({ color: palette.body, metalness: 0.72, roughness: 0.34 });
+  ownedMaterials.add(rollerMaterial);
+  addStaticInstances(
+    normalized,
+    ROLLER_GEOMETRY,
+    rollerMaterial,
+    [-1, 1].flatMap((side) => [-0.34, -0.12, 0.12, 0.34].map((z) => ({
+      position: new THREE.Vector3(side * 0.405, 0.09, z),
+      rotation: new THREE.Euler(0, 0, Math.PI / 2),
+    }))),
+  );
+  const shoulderMaterial = new THREE.MeshStandardMaterial({ color: palette.body, metalness: 0.64, roughness: 0.38 });
+  ownedMaterials.add(shoulderMaterial);
+  addStaticInstances(
+    normalized,
+    SHOULDER_GEOMETRY,
+    shoulderMaterial,
+    [-1, 1].map((side) => ({ position: new THREE.Vector3(side * 0.31, 0.245, -0.04) })),
+  );
+  const markerMaterial = new THREE.MeshBasicMaterial({ color: palette.accent, toneMapped: false });
+  ownedMaterials.add(markerMaterial);
+  addStaticInstances(
+    normalized,
+    UNIT_MARKER_GEOMETRY,
+    markerMaterial,
+    [-1, 1].map((side) => ({ position: new THREE.Vector3(side * 0.31, 0.252, 0.27) })),
+  );
+  const plowMaterial = new THREE.MeshStandardMaterial({ color: palette.trim, metalness: 0.76, roughness: 0.43 });
+  ownedMaterials.add(plowMaterial);
+  const plow = new THREE.Mesh(PLOW_GEOMETRY, plowMaterial);
+  plow.position.set(0, 0.09, 0.52);
+  plow.castShadow = true;
+  normalized.add(plow);
+  normalized.userData.ownedMaterials = [...ownedMaterials];
+  normalized.scale.setScalar(scale);
+  return normalized;
+}
+
+function ImportedArtillery({
+  model,
+  modelName,
+  palette,
+  aimAngle,
+  firing,
+}: {
+  model: string;
+  modelName: string;
+  palette: UnitPalette;
+  aimAngle: number;
+  firing: boolean;
+}) {
+  const { scene } = useGLTF(model);
+  const vehicle = useMemo(
+    () => recolorAsset(scene, palette, modelName),
+    [modelName, palette, scene],
+  );
+  useEffect(() => () => {
+    const materials = vehicle.userData.ownedMaterials as THREE.Material[] | undefined;
+    materials?.forEach((material) => material.dispose());
+  }, [vehicle]);
+  const root = useRef<THREE.Group>(null);
+  const firedAt = useRef(0);
+  const wasFiring = useRef(false);
+
+  useFrame(({ clock }, delta) => {
+    if (firing && !wasFiring.current) firedAt.current = clock.elapsedTime;
+    wasFiring.current = firing;
+    const recoilTime = clock.elapsedTime - firedAt.current;
+    const recoil = firing && recoilTime >= 0 ? Math.sin(recoilTime * 46) * Math.exp(-recoilTime * 17) : 0;
+    if (root.current) {
+      root.current.position.z = -recoil * 0.075;
+      root.current.rotation.x = -recoil * 0.025;
+    }
+    const turret = vehicle.getObjectByName("animated-cannon-turret");
+    if (turret) turret.rotation.y = THREE.MathUtils.damp(turret.rotation.y, aimAngle, 13, delta);
+  });
 
   return (
-    <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[0.43, 0.49, 24]} />
-      <meshBasicMaterial
-        color={palette.accent}
-        transparent
-        opacity={0.42}
-        depthWrite={false}
-        toneMapped={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </mesh>
+    <group ref={root}>
+      <primitive object={vehicle} dispose={null} />
+    </group>
   );
 }
 
-/**
- * A theme-specific low-poly unit. The root has no position or rotation so a
- * board can own piece placement and facing; every model's front points toward
- * local +Z.
- */
+function WalkerCannon({ palette, aimAngle, firing, variant }: {
+  palette: UnitPalette;
+  aimAngle: number;
+  firing: boolean;
+  variant: number;
+}) {
+  const turret = useRef<THREE.Group>(null);
+  const cannon = useRef<THREE.Group>(null);
+  const firedAt = useRef(0);
+  const wasFiring = useRef(false);
+  const trackWheels = Array.from({ length: 5 }, (_, index) => -0.35 + index * 0.175);
+
+  useFrame(({ clock }, delta) => {
+    if (firing && !wasFiring.current) firedAt.current = clock.elapsedTime;
+    wasFiring.current = firing;
+    if (turret.current) turret.current.rotation.y = THREE.MathUtils.damp(turret.current.rotation.y, aimAngle, 13, delta);
+    const elapsed = clock.elapsedTime - firedAt.current;
+    const recoil = firing && elapsed >= 0 ? Math.sin(elapsed * 46) * Math.exp(-elapsed * 17) : 0;
+    if (cannon.current) cannon.current.position.z = -recoil * 0.09;
+  });
+
+  return (
+    <group>
+      <mesh position={[0, 0.19, 0]} castShadow>
+        <boxGeometry args={[0.86, 0.2, 0.95]} />
+        <meshStandardMaterial color={palette.body} roughness={0.4} metalness={0.74} />
+      </mesh>
+      <mesh position={[0, 0.12, 0.38]} rotation={[0.18, 0, 0]} castShadow>
+        <boxGeometry args={[0.92, 0.16, 0.24]} />
+        <meshStandardMaterial color={palette.trim} roughness={0.44} metalness={0.7} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <group key={side} position={[side * 0.48, 0.12, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.15, 0.32, 1.06]} />
+            <meshStandardMaterial color={palette.trim} roughness={0.74} metalness={0.58} />
+          </mesh>
+          {trackWheels.map((z, index) => (
+            <mesh key={z} position={[side * 0.09, 0, z]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[index === 2 ? 0.115 : 0.095, index === 2 ? 0.115 : 0.095, 0.045, 10]} />
+              <meshStandardMaterial color={index % 2 ? palette.body : "#111820"} metalness={0.72} roughness={0.34} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      <mesh position={[0, 0.35, -0.02]} castShadow>
+        <boxGeometry args={[0.52, 0.28, 0.57]} />
+        <meshStandardMaterial color={palette.trim} roughness={0.38} metalness={0.82} />
+      </mesh>
+      <mesh position={[0, 0.48, 0.15]} rotation={[-0.18, 0, 0]} castShadow>
+        <boxGeometry args={[0.72, 0.12, 0.38]} />
+        <meshStandardMaterial color={palette.body} roughness={0.36} metalness={0.78} />
+      </mesh>
+      <mesh position={[0, 0.53, 0.37]}>
+        <boxGeometry args={[0.34, 0.07, 0.025]} />
+        <meshBasicMaterial color={palette.glass} toneMapped={false} />
+      </mesh>
+
+      <group ref={turret} position={[0, 0.55, 0.02]}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.25, 0.28, 0.18, 10]} />
+          <meshStandardMaterial color={palette.trim} metalness={0.8} roughness={0.35} />
+        </mesh>
+        <group ref={cannon} position={[0, 0.01, 0.25]} rotation={[variant ? 0.025 : -0.015, 0, 0]}>
+          <mesh position={[0, 0, 0.33]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.07, 0.1, 0.72, 10]} />
+            <meshStandardMaterial color={palette.body} metalness={0.82} roughness={0.29} />
+          </mesh>
+          <mesh position={[0, 0, 0.69]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.12, 0.12, 0.09, 10]} />
+            <meshStandardMaterial color={palette.trim} metalness={0.82} roughness={0.28} />
+          </mesh>
+        </group>
+        <mesh position={[0.22, 0.1, -0.04]}>
+          <sphereGeometry args={[0.07, 10, 8]} />
+          <meshBasicMaterial color={palette.glass} toneMapped={false} />
+        </mesh>
+        <mesh position={[-0.19, 0.22, -0.05]} rotation={[0, 0, -0.16]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.33, 6]} />
+          <meshStandardMaterial color="#c6d1d8" metalness={0.84} roughness={0.3} />
+        </mesh>
+      </group>
+      <mesh position={[0.24, 0.53, 0.18]}>
+        <sphereGeometry args={[0.06, 8, 6]} />
+        <meshBasicMaterial color={palette.glass} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Visual-only unit family selection; the controller continues to own all rules. */
 export function GameUnit({
   themeId,
   color,
   selected,
   disabled = false,
+  variant = 0,
+  aimAngle = 0,
+  firing = false,
 }: GameUnitProps) {
-  const palette = getPalette(themeId, color, selected, disabled);
-  const model =
-    themeId === "lunar" ? (
-      <LunarMech palette={palette} />
-    ) : themeId === "sky" ? (
-      <SkyGuardian palette={palette} />
-    ) : (
-      <AbyssSubmersible palette={palette} />
-    );
+  const palette = useMemo(
+    () => getPalette(themeId, color, selected, disabled),
+    [themeId, color, selected, disabled],
+  );
+  const useWalker = themeId === "abyss";
+  const artilleryModel = themeId === "sky"
+    ? variant % 2 === 0 ? SPG_MODEL : TANK_MODEL
+    : variant % 2 === 0 ? TANK_MODEL : SPG_MODEL;
+  const modelName = artilleryModel === TANK_MODEL ? "main-battle-tank" : "self-propelled-gun";
 
   return (
     <Float
       enabled={palette.selected}
       speed={0.8}
-      rotationIntensity={0.035}
-      floatIntensity={0.12}
-      floatingRange={[-0.045, 0.045]}
+      rotationIntensity={0.025}
+      floatIntensity={0.08}
+      floatingRange={[-0.025, 0.025]}
     >
       <group>
-        {model}
+        {useWalker ? (
+          <WalkerCannon palette={palette} aimAngle={aimAngle} firing={firing} variant={variant} />
+        ) : (
+          <ImportedArtillery
+            model={artilleryModel}
+            modelName={modelName}
+            palette={palette}
+            aimAngle={aimAngle}
+            firing={firing}
+          />
+        )}
         <SelectionFeedback palette={palette} />
       </group>
     </Float>
   );
 }
 
+useGLTF.preload(TANK_MODEL);
+useGLTF.preload(SPG_MODEL);

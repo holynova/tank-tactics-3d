@@ -158,7 +158,46 @@ button { touch-action: manipulation; }
 .theme-cycle { color: var(--theme-accent) !important; }
 
 .board-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.game-board-layer { position: absolute; inset: 0; overflow: hidden; }
 .game-canvas { position: absolute !important; inset: 0; width: 100% !important; height: 100% !important; touch-action: none; }
+
+.camera-controls-rail {
+  position: absolute;
+  z-index: 5;
+  right: clamp(13px, 2.8vw, 30px);
+  bottom: max(68px, calc(env(safe-area-inset-bottom) + 60px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.camera-controls-rail button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid #d8e7fa30;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--theme-bg) 72%, #d8e7fa 12%);
+  color: #edf6ff;
+  box-shadow: 0 8px 26px #00000055, inset 0 1px #ffffff1a;
+  backdrop-filter: blur(14px) saturate(135%);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.camera-controls-rail button:hover,
+.camera-controls-rail button:focus-visible {
+  border-color: color-mix(in srgb, var(--theme-accent) 76%, white 12%);
+  background: color-mix(in srgb, var(--theme-bg) 46%, var(--theme-accent) 20%);
+  outline: none;
+}
+
+.camera-controls-rail button:active { transform: scale(0.94); }
+.camera-controls-rail svg { width: 19px; height: 19px; stroke-width: 2.2; }
 
 .board-vignette {
   position: absolute;
@@ -167,6 +206,26 @@ button { touch-action: manipulation; }
   pointer-events: none;
   background: radial-gradient(circle at 50% 42%, transparent 32%, color-mix(in srgb, var(--theme-bg) 42%, transparent) 80%), linear-gradient(180deg, #00000012, transparent 20%, transparent 72%, #0000004a);
 }
+
+.camera-hint {
+  position: absolute;
+  z-index: 3;
+  top: 13px;
+  right: 15px;
+  padding: 7px 10px;
+  border: 1px solid #ffffff17;
+  border-radius: 9px;
+  background: #0508108a;
+  color: #d1d9e6a8;
+  font-size: 0.68rem;
+  font-weight: 680;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+
+.camera-hint::before { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: var(--theme-accent); box-shadow: 0 0 10px var(--theme-accent); content: ""; }
+.camera-hint__mobile { display: none; }
 
 .battle-feed {
   position: absolute;
@@ -326,7 +385,7 @@ button { touch-action: manipulation; }
 .rules-grid p { margin: 0; color: #aab4c3; font-size: 0.86rem; line-height: 1.65; }
 
 @media (max-width: 720px) {
-  .game-hud { grid-template-columns: 1fr auto; height: 108px; padding: max(8px, env(safe-area-inset-top)) 10px 52px; }
+  .game-hud { grid-template-columns: minmax(0, 1fr) auto; height: max(98px, calc(88px + env(safe-area-inset-top))); padding: max(8px, env(safe-area-inset-top)) 10px 48px; }
   .game-brand__mark { width: 40px; height: 40px; }
   .game-brand span:last-child { display: none; }
   .turn-cluster { position: absolute; right: 10px; bottom: 7px; left: 10px; justify-content: space-between; gap: 6px; }
@@ -337,6 +396,11 @@ button { touch-action: manipulation; }
   .battle-feed { right: 12px; bottom: 65px; left: 12px; max-width: none; }
   .battle-feed p { max-width: 84vw; overflow: hidden; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
   .interaction-hint { bottom: max(13px, env(safe-area-inset-bottom)); min-height: 40px; max-width: calc(100% - 24px); overflow: hidden; font-size: 0.78rem; text-overflow: ellipsis; }
+  .camera-controls-rail { right: 11px; bottom: max(67px, calc(env(safe-area-inset-bottom) + 61px)); gap: 7px; }
+  .camera-controls-rail button { width: 46px; height: 46px; border-radius: 15px; }
+  .camera-hint { top: 12px; right: 12px; padding: 7px 9px; font-size: 0.63rem; }
+  .camera-hint__mobile { display: inline; }
+  .camera-hint__desktop { display: none; }
   .game-overlay--start { align-items: end; padding: 0; }
   .start-card { width: 100%; max-height: 76dvh; padding: 22px 20px max(20px, env(safe-area-inset-bottom)); overflow: auto; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 25px 25px 0 0; }
   .start-card h1 { font-size: 2.65rem; }
@@ -349,7 +413,9 @@ button { touch-action: manipulation; }
 @media (max-width: 410px) {
   .game-brand__mark { width: 38px; height: 38px; }
   .game-brand strong { font-size: 0.92rem; }
-  .hud-icon { min-width: 39px; min-height: 39px; }
+  .hud-icon { min-width: 38px; min-height: 38px; }
+  .game-hud { padding-right: 8px; padding-left: 8px; }
+  .game-brand { gap: 8px; }
 }
 
 @media (max-height: 680px) and (orientation: landscape) {

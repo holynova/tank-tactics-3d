@@ -55,7 +55,10 @@ export function useGameController() {
   const eventId = useRef(2);
   const soundRef = useRef<ReturnType<typeof createGameAudio> | null>(null);
   const soundEnabledRef = useRef(soundEnabled);
-  soundEnabledRef.current = soundEnabled;
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   useEffect(() => {
     soundRef.current = createGameAudio(() => soundEnabledRef.current);
@@ -148,7 +151,9 @@ export function useGameController() {
           burstPositions: [],
         });
         soundRef.current?.play("fire");
-        await wait(480);
+        // Let the physical shells arc across the board before rules state removes
+        // their targets; the visual flight never determines whether a hit lands.
+        await wait(960);
         if (token !== actionToken.current) return;
         setPieces((current) => current.filter((piece) => !victimSet.has(piece.id)));
         setFx((current) => ({
@@ -163,7 +168,7 @@ export function useGameController() {
           `${activeColor === "red" ? "红方" : "蓝方"}完成 ${result.capture.victimIds.length > 1 ? "双线" : "二打一"}集火`,
           activeColor,
         );
-        await wait(430);
+        await wait(820);
         if (token !== actionToken.current) return;
         setFx({ attackerIds: [], victimIds: [], burstPositions: [] });
       } else {

@@ -69,5 +69,5 @@
 
 - [x] 运行原规则测试、TypeScript 检查与生产构建
 - [x] 检查手机和桌面布局，实际完成一轮移动与集火
-- [ ] 发布 GitHub Pages 并验证新静态包
-- [ ] 更新公开 ChatGPT Site 并确认匿名访问
+- [x] 发布 GitHub Pages 并验证新静态包
+- [x] 更新公开 ChatGPT Site 并确认匿名访问

@@ -1,0 +1,256 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="100%" height="100%">
+  <title>Tank Tactics 3D - Project Hero</title>
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="spaceBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="45%" stop-color="#070a12" />
+      <stop offset="100%" stop-color="#04060a" />
+    </linearGradient>
+
+    <!-- Ambient Glows -->
+    <radialGradient id="redGlow" cx="75%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#ff6348" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#ff6348" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="25%" cy="70%" r="60%">
+      <stop offset="0%" stop-color="#55caff" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#55caff" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Typography Gradients -->
+    <linearGradient id="tacticalCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#55caff" />
+      <stop offset="60%" stop-color="#a6f4ff" />
+      <stop offset="100%" stop-color="#55caff" />
+    </linearGradient>
+    <linearGradient id="redLaser" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff7658" />
+      <stop offset="100%" stop-color="#ff381e" />
+    </linearGradient>
+    <linearGradient id="goldAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffd27d" />
+      <stop offset="100%" stop-color="#ff9900" />
+    </linearGradient>
+
+    <!-- Isometric Grid Pattern -->
+    <pattern id="tacticalHex" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#162233" stroke-width="0.8" stroke-opacity="0.6" />
+      <circle cx="0" cy="0" r="1.2" fill="#55caff" fill-opacity="0.4" />
+    </pattern>
+
+    <!-- Holographic Scanline Filter/Pattern -->
+    <pattern id="holoScan" width="100" height="4" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="100" y2="0" stroke="#55caff" stroke-width="0.4" stroke-opacity="0.15" />
+    </pattern>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1200" height="440" rx="16" fill="url(#spaceBg)" stroke="#1a273b" stroke-width="1.5" />
+  <rect width="1200" height="440" fill="url(#tacticalHex)" rx="16" />
+  <rect width="1200" height="440" fill="url(#blueGlow)" rx="16" />
+  <rect width="1200" height="440" fill="url(#redGlow)" rx="16" />
+
+  <!-- Corner Brackets -->
+  <path d="M 24 44 L 24 24 L 44 24" fill="none" stroke="#55caff" stroke-width="2" />
+  <path d="M 1176 44 L 1176 24 L 1156 24" fill="none" stroke="#ff6348" stroke-width="2" />
+  <path d="M 24 396 L 24 416 L 44 416" fill="none" stroke="#ffbd62" stroke-width="2" />
+  <path d="M 1176 396 L 1176 416 L 1156 416" fill="none" stroke="#55caff" stroke-width="2" />
+
+  <!-- Top System Header -->
+  <g transform="translate(56, 26)">
+    <circle cx="6" cy="10" r="4" fill="#55caff" />
+    <text x="18" y="14" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="11" font-weight="700" fill="#55caff" letter-spacing="2">ORBITAL TACTICAL ENGINE // 3D SANDBOX BOARD</text>
+    <rect x="380" y="2" width="130" height="18" rx="4" fill="#101928" stroke="#253a56" stroke-width="0.8" />
+    <text x="390" y="15" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="10" font-weight="700" fill="#a6f4ff">PVE &amp; PVP READY</text>
+  </g>
+
+  <!-- ==================== LEFT COLUMN: INTRO & MECHANICS ==================== -->
+  <!-- Category Pill Badge -->
+  <g transform="translate(56, 68)">
+    <rect width="326" height="26" rx="13" fill="#101b2a" stroke="#55caff" stroke-width="1" stroke-opacity="0.7" />
+    <circle cx="14" cy="13" r="4" fill="#55caff" />
+    <text x="26" y="17" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800" fill="#a6f4ff" letter-spacing="1.2">THREE.JS TURN-BASED TACTICS</text>
+  </g>
+
+  <!-- Title -->
+  <text x="56" y="140" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="50" font-weight="900" fill="#ffffff" letter-spacing="1.5">TANK TACTICS</text>
+  <text x="56" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="44" font-weight="900" fill="url(#tacticalCyan)" letter-spacing="2">3D SANDBOX</text>
+
+  <!-- Subtitle -->
+  <text x="58" y="226" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif" font-size="16" font-weight="600" fill="#8aa8cb" letter-spacing="4">二打一 · 3D 轨道战术沙盘 · 经典重制</text>
+
+  <!-- Value Description -->
+  <text x="58" y="260" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14.5" fill="#c3d5ea" font-weight="400">
+    经典坦克棋灵魂重制：4×4 轨道沙盘高台、双机集火夹击结算、
+  </text>
+  <text x="58" y="282" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14.5" fill="#c3d5ea" font-weight="400">
+    拥挤与友军相邻保护、三档 Minimax 战术 AI 与三大深空战区。
+  </text>
+
+  <!-- Highlights Pills -->
+  <g transform="translate(58, 308)">
+    <!-- Pill 1 -->
+    <rect x="0" y="0" width="150" height="30" rx="6" fill="#101a27" stroke="#223952" stroke-width="1" />
+    <text x="12" y="19" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#ff7658">♟️ 4×4 二打一集火</text>
+
+    <!-- Pill 2 -->
+    <rect x="158" y="0" width="150" height="30" rx="6" fill="#101a27" stroke="#223952" stroke-width="1" />
+    <text x="168" y="19" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#55caff">🤖 Minimax 战术 AI</text>
+
+    <!-- Pill 3 -->
+    <rect x="316" y="0" width="150" height="30" rx="6" fill="#101a27" stroke="#223952" stroke-width="1" />
+    <text x="328" y="19" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#ffd27d">🌌 3 大太空战役区</text>
+  </g>
+
+  <!-- Tech Metadata Bar -->
+  <g transform="translate(58, 362)">
+    <rect x="0" y="0" width="466" height="38" rx="8" fill="#0c1421" stroke="#1d2d42" stroke-width="1" />
+    <text x="16" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#4d6b8c">RENDER STACK:</text>
+    <text x="130" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#c3d5ea">Three.js</text>
+    <circle cx="210" cy="19" r="2.5" fill="#55caff" />
+    <text x="224" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#c3d5ea">React 19 / Next.js</text>
+    <circle cx="370" cy="19" r="2.5" fill="#ff7658" />
+    <text x="384" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#c3d5ea">Tailwind CSS</text>
+  </g>
+
+  <!-- ==================== RIGHT COLUMN: 3D HOLOGRAPHIC TACTICAL SANDBOX ==================== -->
+  <g transform="translate(560, 40)">
+    <!-- SandBox Console Frame -->
+    <rect width="584" height="360" rx="14" fill="#0a101a" fill-opacity="0.9" stroke="#1c2d42" stroke-width="1.5" />
+    
+    <!-- Top HUD Bar -->
+    <rect width="584" height="34" rx="14" fill="#121d2b" />
+    <rect y="24" width="584" height="10" fill="#121d2b" />
+    <line x1="0" y1="34" x2="584" y2="34" stroke="#22364e" stroke-width="1" />
+
+    <circle cx="20" cy="17" r="4" fill="#ff7658" />
+    <circle cx="34" cy="17" r="4" fill="#55caff" />
+    <text x="48" y="21" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="11" font-weight="700" fill="#7ba0c5" letter-spacing="1">TACTICAL HOLO-SANDBOX // 4×4 HIGH PLATFORM</text>
+    
+    <rect x="450" y="8" width="118" height="18" rx="4" fill="#0d1f30" stroke="#55caff" stroke-width="0.8" />
+    <text x="460" y="21" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="10" font-weight="700" fill="#55caff">CAMERA: ORBIT</text>
+
+    <!-- 3D ISOMETRIC SANDBOX PLATFORM -->
+    <!-- Base Platform Slab -->
+    <g transform="translate(290, 195)">
+      <!-- Platform Depth Sides -->
+      <polygon points="-160,25 0,105 160,25 160,45 0,125 -160,45" fill="#101824" stroke="#1f2f45" stroke-width="1.2" />
+      
+      <!-- Platform Top Surface (Diamond Isometric Plane) -->
+      <polygon points="0,-65 160,25 0,115 -160,25" fill="#172435" stroke="#2e4663" stroke-width="1.5" />
+
+      <!-- 4x4 Grid Lines on Surface -->
+      <!-- Axis 1 (Top-Left to Bottom-Right diagonals) -->
+      <line x1="-120" y1="-2" x2="0" y2="70" stroke="#253a52" stroke-width="1.2" />
+      <line x1="-80" y1="-25" x2="40" y2="48" stroke="#253a52" stroke-width="1.2" />
+      <line x1="-40" y1="-45" x2="80" y2="25" stroke="#253a52" stroke-width="1.2" />
+
+      <!-- Axis 2 (Top-Right to Bottom-Left diagonals) -->
+      <line x1="40" y1="-45" x2="-80" y2="25" stroke="#253a52" stroke-width="1.2" />
+      <line x1="80" y1="-25" x2="-40" y2="48" stroke="#253a52" stroke-width="1.2" />
+      <line x1="120" y1="-2" x2="0" y2="70" stroke="#253a52" stroke-width="1.2" />
+
+      <!-- Focus Fire Flanking Laser Beam (Red Line from Red Tank 1 & 2 to Blue Tank) -->
+      <line x1="-40" y1="2" x2="40" y2="48" stroke="url(#redLaser)" stroke-width="3" stroke-dasharray="6 3" />
+      
+      <!-- ==================== UNIT 1: RED TANK A (Cell [1, 2]) ==================== -->
+      <g transform="translate(-40, 2)">
+        <!-- Shadow -->
+        <ellipse cx="0" cy="4" rx="16" ry="9" fill="#000000" fill-opacity="0.4" />
+        <!-- Tank Base / Treads -->
+        <polygon points="-14,-4 0,-12 14,-4 0,4" fill="#202a36" stroke="#ff6348" stroke-width="1" />
+        <!-- Red Turret Block -->
+        <polygon points="-10,-12 0,-18 10,-12 0,-6" fill="#ff6348" />
+        <!-- Cannon Pointing towards Unit 3 -->
+        <line x1="0" y1="-12" x2="16" y2="-4" stroke="#ff9480" stroke-width="3" />
+        <circle cx="16" cy="-4" r="2.5" fill="#ffffff" />
+      </g>
+
+      <!-- ==================== UNIT 2: RED TANK B (Cell [2, 2] - Flanking Partner) ==================== -->
+      <g transform="translate(0, 25)">
+        <!-- Shadow -->
+        <ellipse cx="0" cy="4" rx="16" ry="9" fill="#000000" fill-opacity="0.4" />
+        <!-- Tank Base / Treads -->
+        <polygon points="-14,-4 0,-12 14,-4 0,4" fill="#202a36" stroke="#ff6348" stroke-width="1" />
+        <!-- Red Turret Block -->
+        <polygon points="-10,-12 0,-18 10,-12 0,-6" fill="#ff6348" />
+        <!-- Cannon Pointing towards Unit 3 -->
+        <line x1="0" y1="-12" x2="18" y2="-2" stroke="#ff9480" stroke-width="3" />
+        <circle cx="18" cy="-2" r="2.5" fill="#ffffff" />
+      </g>
+
+      <!-- ==================== UNIT 3: BLUE TANK (Cell [3, 2] - Targeted / Under Fire) ==================== -->
+      <g transform="translate(40, 48)">
+        <!-- Impact Shockwave Target -->
+        <circle cx="0" cy="-6" r="18" fill="none" stroke="#ff6348" stroke-width="1.5" stroke-dasharray="3 3" />
+        <ellipse cx="0" cy="4" rx="16" ry="9" fill="#000000" fill-opacity="0.4" />
+        <!-- Tank Base -->
+        <polygon points="-14,-4 0,-12 14,-4 0,4" fill="#1b2a3a" stroke="#55caff" stroke-width="1" />
+        <!-- Blue Turret -->
+        <polygon points="-10,-12 0,-18 10,-12 0,-6" fill="#55caff" />
+        <line x1="0" y1="-12" x2="-14" y2="-18" stroke="#a6f4ff" stroke-width="2.5" />
+        <!-- Warning Alert Badge -->
+        <polygon points="-5,-34 5,-34 0,-24" fill="#ff381e" />
+        <text x="-4" y="-37" font-family="'SF Mono', monospace" font-size="9" font-weight="900" fill="#ff7658">CRUSH</text>
+      </g>
+
+      <!-- ==================== UNIT 4: BLUE DEFENSIVE TANK (Cell [0, 3] Guarding) ==================== -->
+      <g transform="translate(80, -2)">
+        <ellipse cx="0" cy="4" rx="16" ry="9" fill="#000000" fill-opacity="0.4" />
+        <polygon points="-14,-4 0,-12 14,-4 0,4" fill="#1b2a3a" stroke="#55caff" stroke-width="1" />
+        <polygon points="-10,-12 0,-18 10,-12 0,-6" fill="#55caff" />
+        <line x1="0" y1="-12" x2="-12" y2="-4" stroke="#a6f4ff" stroke-width="2.5" />
+      </g>
+
+      <!-- Tactical Coordinate Markers -->
+      <text x="-155" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">A1</text>
+      <text x="-1" y="-55" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">D1</text>
+      <text x="145" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">D4</text>
+      <text x="-1" y="105" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">A4</text>
+    </g>
+
+    <!-- Bottom Left HUD Card: Focus Fire Rule Indicator -->
+    <g transform="translate(18, 226)">
+      <rect width="186" height="114" rx="8" fill="#09111b" fill-opacity="0.92" stroke="#1f3248" stroke-width="1" />
+      <text x="12" y="20" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="10" font-weight="700" fill="#ff7658">RULE: 2-ON-1 FLANK</text>
+      
+      <!-- Pattern Demo -->
+      <rect x="12" y="30" width="162" height="32" rx="4" fill="#111c2a" stroke="#203348" stroke-width="0.8" />
+      <text x="20" y="45" font-family="'SF Mono', monospace" font-size="9" fill="#cad5e2">LINE: [RED]-[RED]-[BLUE]</text>
+      <text x="20" y="56" font-family="'SF Mono', monospace" font-size="8.5" font-weight="700" fill="#ff7658">➔ TARGET ELIMINATED</text>
+
+      <!-- Immunity conditions -->
+      <text x="12" y="78" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" fill="#88a1be">· 拥挤保护: 线上单位 &gt; 3 免疫</text>
+      <text x="12" y="93" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" fill="#88a1be">· 友军保护: 紧邻同色单位免疫</text>
+      <text x="12" y="108" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" fill="#88a1be">· 胜负判定: 一方存活 ≤ 1 负</text>
+    </g>
+
+    <!-- Bottom Right HUD Card: 3 Cosmic Theaters -->
+    <g transform="translate(382, 226)">
+      <rect width="186" height="114" rx="8" fill="#09111b" fill-opacity="0.92" stroke="#1f3248" stroke-width="1" />
+      <text x="12" y="20" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="10" font-weight="700" fill="#55caff">3 THEATER WORLDS</text>
+      
+      <!-- World 1 Lunar -->
+      <g transform="translate(12, 30)">
+        <rect width="162" height="22" rx="4" fill="#121b27" stroke="#ff7658" stroke-width="0.8" />
+        <circle cx="12" cy="11" r="3.5" fill="#ff7658" />
+        <text x="22" y="15" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" font-weight="700" fill="#c3d5ea">月背攻城线 (Lunar)</text>
+      </g>
+
+      <!-- World 2 Sky/Orbital -->
+      <g transform="translate(12, 57)">
+        <rect width="162" height="22" rx="4" fill="#121b27" stroke="#ffd27d" stroke-width="0.8" />
+        <circle cx="12" cy="11" r="3.5" fill="#ffd27d" />
+        <text x="22" y="15" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" font-weight="700" fill="#c3d5ea">轨道熔炉 (Foundry)</text>
+      </g>
+
+      <!-- World 3 Glacial Abyss -->
+      <g transform="translate(12, 84)">
+        <rect width="162" height="22" rx="4" fill="#121b27" stroke="#55caff" stroke-width="0.8" />
+        <circle cx="12" cy="11" r="3.5" fill="#55caff" />
+        <text x="22" y="15" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="9" font-weight="700" fill="#c3d5ea">冰环前哨 (Glacial)</text>
+      </g>
+    </g>
+  </g>
+</svg>

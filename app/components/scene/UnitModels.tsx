@@ -8,6 +8,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { PlayerColor, ThemeId } from "../../game/types";
 import { getMarkTexture, getSurfaceTextures } from "./industrial-materials";
 import { AIM_SECONDS } from "../../game/animation";
+import { cannonRecoil } from "../../game/combat-presentation";
 
 export interface UnitMotionState {
   moving: boolean; turning: boolean; phase: number; travel: number; turn: number;
@@ -15,7 +16,7 @@ export interface UnitMotionState {
 
 export interface GameUnitProps {
   themeId: ThemeId; color: PlayerColor; selected: boolean; disabled?: boolean;
-  variant?: number; aimAngle?: number; firing?: boolean;
+  variant?: number; aimAngle?: number; firing?: boolean; fireDelay?: number;
   motion?: React.RefObject<UnitMotionState>;
 }
 type Finish = "paint" | "steel" | "dark" | "rubber" | "brass" | "lamp";
@@ -222,25 +223,27 @@ function TankTracks({materials,motion}:{materials:Record<Finish,THREE.Material>;
   return <>{parts.map(({finish,geometry},i)=><instancedMesh key={finish} ref={mesh=>{instances.current[i]=mesh;}} args={[geometry,materials[finish],64]} raycast={decorativeRaycast} castShadow receiveShadow dispose={null}/>)}</>;
 }
 
-export function GameUnit({themeId,color,selected,variant=0,aimAngle=0,firing=false,motion}:GameUnitProps) {
+export function GameUnit({themeId,color,selected,variant=0,aimAngle=0,firing=false,fireDelay=AIM_SECONDS,motion}:GameUnitProps) {
   const walker=variant%2===1;
   const geometries=useMemo(()=>geometryFor(walker),[walker]);
   const materials=useFinishes(color,themeId);
   const legs=useMemo(()=>walker?createLegRig(materials):null,[walker,materials]);
   useEffect(()=>()=>legs?.skeleton.dispose(),[legs]);
-  const turret=useRef<THREE.Group>(null), barrel=useRef<THREE.Group>(null);
+  const turret=useRef<THREE.Group>(null), barrel=useRef<THREE.Group>(null), chassis=useRef<THREE.Group>(null);
   const started=useRef(-10), wasFiring=useRef(false);
   const mark=useMemo(()=>getMarkTexture(`0${variant+1}`),[variant]);
   useFrame(({clock},delta)=>{
     if(firing&&!wasFiring.current)started.current=clock.elapsedTime;
     wasFiring.current=firing;
-    const t=clock.elapsedTime-started.current-AIM_SECONDS;
+    const t=clock.elapsedTime-started.current-fireDelay;
     if(turret.current){
       const yaw=turret.current.rotation.y;
       const difference=Math.atan2(Math.sin(aimAngle-yaw),Math.cos(aimAngle-yaw));
       turret.current.rotation.y=yaw+difference*(1-Math.exp(-delta*13));
     }
-    if(barrel.current)barrel.current.position.z=t<0?0:-Math.max(0,Math.sin(t*34))*Math.exp(-t*9)*.13;
+    const kick=cannonRecoil(t);
+    if(barrel.current)barrel.current.position.z=-kick*.29;
+    if(chassis.current){chassis.current.rotation.x=-kick*.035;chassis.current.position.y=-kick*.018;}
     if(legs){
       const state=motion?.current;
       const phase=state?.phase??0,weight=state?.moving?Math.min(1,phase*8,(1-phase)*8):0;
@@ -252,7 +255,7 @@ export function GameUnit({themeId,color,selected,variant=0,aimAngle=0,firing=fal
       });
     }
   });
-  return <group scale={.93}>
+  return <group ref={chassis} scale={.93}>
     <MeshParts parts={geometries.hull} materials={materials}/>
     {legs?<primitive object={legs.object} dispose={null}/>:<TankTracks materials={materials} motion={motion}/>}
     <group ref={turret} position={[0,walker ? .62 : .42,0]}>

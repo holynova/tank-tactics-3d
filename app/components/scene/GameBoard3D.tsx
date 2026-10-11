@@ -13,7 +13,9 @@ import { GameUnit, type UnitMotionState } from "./UnitModels";
 import { ThemeEnvironment } from "./ThemeEnvironment";
 import { getDamageTexture, getParticleTexture, getSurfaceTextures } from "./industrial-materials";
 import { DECK_TILE, DeckPlatform } from "./DeckPlatform";
-import { AIM_SECONDS, BURST_SECONDS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS, PROJECTILE_SECONDS } from "../../game/animation";
+import { AIM_SECONDS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS, PROJECTILE_SECONDS } from "../../game/animation";
+import { buildShotCues } from "../../game/combat-presentation";
+import { ArtilleryCameraFeedback, ArtilleryImpact } from "./ArtilleryImpact";
 
 const CELL_GAP = 1.42;
 
@@ -27,6 +29,7 @@ function AnimatedUnit({
   selected,
   disabled,
   firing,
+  fireDelay,
   aimTarget,
   onPress,
 }: {
@@ -35,6 +38,7 @@ function AnimatedUnit({
   selected: boolean;
   disabled: boolean;
   firing: boolean;
+  fireDelay: number;
   aimTarget: Position | null;
   onPress: (position: Position) => void;
 }) {
@@ -111,6 +115,7 @@ function AnimatedUnit({
         variant={Number(piece.id.split("-").at(-1)) || 0}
         aimAngle={aimAngle}
         firing={firing}
+        fireDelay={fireDelay}
         motion={motion}
       />
       <MovementDust motion={motion} />
@@ -250,8 +255,9 @@ function CannonShell({ shot, reducedMotion }: { shot: Shot; reducedMotion: boole
     root.current.visible = true;
     const duration = reducedMotion ? 0.36 : PROJECTILE_SECONDS;
     const progress = THREE.MathUtils.clamp(elapsed / duration, 0, 1);
+    root.current.visible = progress < 1;
     const distance = shot.from.distanceTo(shot.to);
-    const height = Math.min(1.6, distance * 0.2) + 0.72;
+    const height = Math.min(.75, distance * .12) + .28;
     root.current.position.copy(shot.from).lerp(shot.to, progress);
     root.current.position.y += Math.sin(progress * Math.PI) * height;
     velocity.current.copy(shot.to).sub(shot.from);
@@ -291,19 +297,31 @@ function MuzzleFlash({ shot }: { shot: Shot }) {
   const flare = useRef<THREE.Mesh>(null);
   const halo = useRef<THREE.Sprite>(null);
   const light = useRef<THREE.PointLight>(null);
+  const pressure=useRef<THREE.Mesh>(null);
+  const gas=useRef<Array<THREE.Sprite|null>>([]);
+  const smoke=useMemo(()=>getParticleTexture("smoke"),[]);
   const map = useMemo(()=>getParticleTexture("glow"),[]);
   const startedAt = useRef<number | null>(null);
   useFrame(({ clock }) => {
     if (startedAt.current === null) startedAt.current = clock.elapsedTime;
     if (!flare.current) return;
     const elapsed = clock.elapsedTime - startedAt.current - shot.delay;
-    const progress = Math.max(0, elapsed / .18);
+    const progress = Math.max(0, elapsed / .16);
     const visible = elapsed >= 0 && progress < 1;
     flare.current.visible = visible;
-    flare.current.scale.setScalar(0.48 + Math.min(progress, 1) * 1.3);
+    flare.current.scale.set(.65+progress*.8,.8+progress*1.6,.65+progress*.8);
     (flare.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - progress);
-    if(halo.current){halo.current.visible=visible;halo.current.scale.setScalar(.65+progress*.7);halo.current.material.opacity=Math.max(0,1-progress)*.8;}
-    if(light.current)light.current.intensity=visible?12*(1-progress):0;
+    if(halo.current){halo.current.visible=visible;halo.current.scale.setScalar(1.05+progress*.9);halo.current.material.opacity=Math.max(0,1-progress)*.95;}
+    if(light.current)light.current.intensity=visible?24*Math.exp(-progress*5):0;
+    if(pressure.current){pressure.current.visible=elapsed>=0&&elapsed<.3;pressure.current.scale.setScalar(.3+Math.max(0,elapsed)*4);(pressure.current.material as THREE.MeshBasicMaterial).opacity=.65*Math.max(0,1-elapsed/.3);}
+    gas.current.forEach((sprite,i)=>{
+      if(!sprite)return;
+      const age=Math.max(0,elapsed-i*.025),life=.65;
+      sprite.visible=elapsed>=i*.025&&age<life;
+      sprite.position.set((i%2?1:-1)*age*.38,.04+age*.3,.12+age*(1.1+i*.16));
+      sprite.scale.setScalar(.18+age*.9);
+      sprite.material.opacity=.62*Math.max(0,1-age/life);
+    });
   });
   const direction = shot.to.clone().sub(shot.from);
   const angle = Math.atan2(direction.x, direction.z);
@@ -311,120 +329,18 @@ function MuzzleFlash({ shot }: { shot: Shot }) {
   position.y += 0.01;
   return (
     <group position={position} rotation={[0, angle, 0]}>
-      <mesh ref={flare} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.16, 0.42, 9]} />
+      <mesh ref={flare} visible={false} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.21, 0.64, 9]} />
         <meshBasicMaterial color="#ffcf7a" transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </mesh>
-      <sprite ref={halo}><spriteMaterial map={map} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false}/></sprite>
-      <pointLight ref={light} color="#ffb469" intensity={0} distance={2.8} decay={2} />
+      <sprite ref={halo} visible={false}><spriteMaterial map={map} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false}/></sprite>
+      <mesh ref={pressure} position={[0,0,.1]} visible={false}><ringGeometry args={[.2,.225,32]}/><meshBasicMaterial color="#ffda9d" transparent depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} toneMapped={false}/></mesh>
+      {Array.from({length:4},(_,i)=><sprite key={i} ref={sprite=>{gas.current[i]=sprite;}} visible={false}><spriteMaterial map={smoke} color="#b7ac95" transparent depthWrite={false}/></sprite>)}
+      <pointLight ref={light} color="#ffb469" intensity={0} distance={4} decay={2} />
     </group>
   );
 }
 
-interface Particle {
-  velocity: THREE.Vector3;
-  size: number;
-  spin: THREE.Vector3;
-  color: THREE.Color;
-}
-
-function Explosion({ position, color, reducedMotion }: {
-  position: [number, number, number];
-  color: string;
-  reducedMotion: boolean;
-}) {
-  const shards = useRef<THREE.InstancedMesh>(null);
-  const ring = useRef<THREE.Mesh>(null);
-  const flash = useRef<THREE.Sprite>(null);
-  const boomLight = useRef<THREE.PointLight>(null);
-  const smoke = useRef<Array<THREE.Sprite | null>>([]);
-  const smokeMap = useMemo(() => getParticleTexture("smoke"), []);
-  const glowMap = useMemo(() => getParticleTexture("glow"), []);
-  const startedAt = useRef<number | null>(null);
-  const mobile = useThree((state) => state.size.width < 620);
-  const count = reducedMotion ? 8 : mobile ? 64 : 96;
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const center = useMemo(() => new THREE.Vector3(...position), [position]);
-  const particles = useMemo<Particle[]>(() => Array.from({ length: count }, (_, index) => {
-    const seed = index * 2.399963229728653;
-    const planar = 0.48 + ((index * 37) % 100) / 80;
-    return {
-      velocity: new THREE.Vector3(Math.cos(seed) * planar, 0.6 + ((index * 19) % 100) / 55, Math.sin(seed) * planar),
-      size: 0.035 + ((index * 13) % 100) / 3600,
-      spin: new THREE.Vector3(seed * 0.5, seed * 0.3, seed),
-      color: new THREE.Color(index % 7 === 0 ? "#fff1b3" : index % 3 === 0 ? "#ff6b35" : color),
-    };
-  }), [color, count]);
-  useEffect(()=>{
-    particles.forEach((particle,index)=>shards.current?.setColorAt(index,particle.color));
-    if(shards.current?.instanceColor)shards.current.instanceColor.needsUpdate=true;
-  },[particles]);
-
-  useFrame(({ clock }) => {
-    if (startedAt.current === null) startedAt.current = clock.elapsedTime;
-    const t = Math.min(1, (clock.elapsedTime - startedAt.current) / (reducedMotion ? 0.42 : BURST_SECONDS));
-    if(boomLight.current)boomLight.current.intensity=18*Math.exp(-t*8);
-    if (ring.current) {
-      ring.current.scale.setScalar(1 + t * 5.5);
-      (ring.current.material as THREE.MeshBasicMaterial).opacity = 0.92 * (1 - t);
-    }
-    if (flash.current) {
-      const size = .8 + Math.sin(Math.min(1, t * 3) * Math.PI) * 1.6 + t * 1.2;
-      flash.current.scale.setScalar(size);
-      flash.current.material.opacity = Math.max(0, 1 - t * 3.8);
-    }
-    if (shards.current) {
-      particles.forEach((particle, index) => {
-        dummy.position.copy(center).addScaledVector(particle.velocity, t * (reducedMotion ? 0.55 : 1.1));
-        dummy.position.y -= t * t * 1.35;
-        dummy.rotation.set(
-          particle.spin.x * t,
-          particle.spin.y * t,
-          particle.spin.z * t,
-        );
-        const size = particle.size * Math.max(0.18, 1 - t * 0.46);
-        dummy.scale.set(size * (1 + (index % 4) * 0.4), size, size * (1 + (index % 5) * 0.24));
-        dummy.updateMatrix();
-        shards.current!.setMatrixAt(index, dummy.matrix);
-      });
-      shards.current.instanceMatrix.needsUpdate = true;
-      (shards.current.material as THREE.MeshBasicMaterial).opacity=1-t;
-    }
-    smoke.current.forEach((puff, index) => {
-      if (!puff) return;
-      const angle = (index / 5) * Math.PI * 2;
-      puff.position.set(
-        position[0] + Math.cos(angle) * (0.14 + t * 0.34),
-        position[1] + 0.08 + t * (0.48 + index % 3 * 0.08),
-        position[2] + Math.sin(angle) * (0.14 + t * 0.34),
-      );
-      const scale = (.48 + t * 1.25) * (1 + (index % 2) * .22);
-      puff.scale.set(scale, scale * 0.78, scale);
-      puff.material.opacity = (reducedMotion ? .25 : .65) * (1 - t);
-      puff.material.rotation = index * .73 + t * .3;
-    });
-  });
-
-  return (
-    <group>
-      <sprite ref={flash} position={position}><spriteMaterial map={glowMap} transparent opacity={.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false}/></sprite>
-      <mesh ref={ring} position={[position[0], .106, position[2]]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.17, 0.3, 40]} />
-        <meshBasicMaterial color={color} transparent opacity={0.96} depthWrite={false} toneMapped={false} />
-      </mesh>
-      <instancedMesh ref={shards} args={[undefined, undefined, count]} frustumCulled={false}>
-        <icosahedronGeometry args={[1, 0]} />
-        <meshBasicMaterial color="#ffffff" vertexColors transparent opacity={1} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-      </instancedMesh>
-      {Array.from({ length: 5 }, (_, index) => (
-        <sprite key={index} ref={(sprite) => { smoke.current[index] = sprite; }} position={position}>
-          <spriteMaterial map={smokeMap} color="#847c6a" transparent opacity={.6} depthWrite={false}/>
-        </sprite>
-      ))}
-      <pointLight ref={boomLight} position={[position[0], position[1] + 0.3, position[2]]} color="#ffc37b" intensity={18} distance={4.2} decay={2} />
-    </group>
-  );
-}
 
 function DamageDebris({scars}:{scars:Position[]}) {
   const chunks=useRef<THREE.InstancedMesh>(null);
@@ -455,14 +371,7 @@ function AttackEffects({ pieces, fx, themeId, reducedMotion }: {
   reducedMotion: boolean;
 }) {
   const theme = THEMES[themeId];
-  const attackers = pieces.filter((piece) => fx.attackerIds.includes(piece.id));
-  const victims = pieces.filter((piece) => fx.victimIds.includes(piece.id));
-  const shots = victims.flatMap((victim, victimIndex) => {
-    const aligned = attackers
-      .filter((attacker) => attacker.row === victim.row || attacker.col === victim.col)
-      .sort((a, b) => Math.abs(a.row - victim.row) + Math.abs(a.col - victim.col) - (Math.abs(b.row - victim.row) + Math.abs(b.col - victim.col)));
-    const firingPair = (aligned.length >= 2 ? aligned : attackers).slice(0, 2);
-    return firingPair.map((attacker, shooterIndex) => {
+  const shots = buildShotCues(pieces,fx.attackerIds,fx.victimIds).map(({attacker,victim,id,delay}) => {
       const from = new THREE.Vector3(...worldPosition(attacker));
       const to = new THREE.Vector3(...worldPosition(victim));
       const walker = Number(attacker.id.split("-").at(-1)) % 2 === 1;
@@ -472,13 +381,12 @@ function AttackEffects({ pieces, fx, themeId, reducedMotion }: {
       const direction = heading.clone().setY(0).normalize();
       from.addScaledVector(direction, walker ? .85 : 1.15);
       return {
-        id: `${attacker.id}-${victim.id}`,
+        id,
         from,
         to,
         accent: attacker.color === "red" ? theme.red : theme.blue,
-        delay: AIM_SECONDS + victimIndex * .12 + shooterIndex * .045,
+        delay,
       } satisfies Shot;
-    });
   });
 
   return (
@@ -488,10 +396,9 @@ function AttackEffects({ pieces, fx, themeId, reducedMotion }: {
       {fx.burstPositions.map((position, index) => {
         const [x, , z] = worldPosition(position);
         return (
-          <Explosion
+          <ArtilleryImpact
             key={`${position.row}-${position.col}-${index}`}
             position={[x, 0.54, z]}
-            color={theme.accent}
             reducedMotion={reducedMotion}
           />
         );
@@ -566,6 +473,7 @@ export function GameBoard3D({
 }: GameBoard3DProps) {
   const theme = THEMES[themeId];
   const controls = useRef<OrbitControlsImpl>(null);
+  const cues=buildShotCues(pieces,fx.attackerIds,fx.victimIds);
   const mobileLayout = typeof window !== "undefined" && window.innerWidth < 620;
   const reducedMotion = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -620,6 +528,7 @@ export function GameBoard3D({
         />
         <CameraRig controls={controls} />
         <RenderProbe />
+        <ArtilleryCameraFeedback fx={fx} reducedMotion={reducedMotion}/>
         <color attach="background" args={[theme.background]} />
         <ThemeEnvironment themeId={themeId} />
 
@@ -659,6 +568,7 @@ export function GameBoard3D({
                 selected={piece.id === selectedId}
                 disabled={disabled || fx.victimIds.includes(piece.id)}
                 firing={fx.attackerIds.includes(piece.id)}
+                fireDelay={cues.find(cue=>cue.attacker.id===piece.id)?.delay??AIM_SECONDS}
                 aimTarget={aimTarget}
                 onPress={onCellPress}
               />

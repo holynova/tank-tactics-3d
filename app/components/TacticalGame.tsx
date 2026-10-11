@@ -53,7 +53,7 @@ export function TacticalGame() {
   const busy=game.phase==="rolling"||game.phase==="animating";
   const shooting=game.fx.attackerIds.length>0||game.fx.burstPositions.length>0;
   const botTurn=game.mode==="pve"&&game.turn==="red"&&game.phase==="playing";
-  const status=game.phase==="rolling"?"争夺先手":game.phase==="animating"?(shooting?"重炮集火":"装甲机动"):game.phase==="gameover"?"战局结束":botTurn?"电脑正在推演":`${game.turn==="red"?"红方":"蓝方"}行动`;
+  const status=game.phase==="rolling"?"争夺先手":game.phase==="animating"?(game.fx.burstPositions.length?"命中爆破":shooting?"重炮集火":"装甲机动"):game.phase==="gameover"?"战局结束":botTurn?"电脑正在推演":`${game.turn==="red"?"红方":"蓝方"}行动`;
   const instruction=game.selectedId?"选择发光格完成移动":botTurn?"等待电脑完成机动":"点选己方单位 · 移动一格";
   const style={"--theme-red":theme.red,"--theme-blue":theme.blue,"--theme-accent":theme.accent,"--theme-bg":theme.background} as CSSProperties;
   return <main className={`game-shell theme-${game.themeId}`} style={style}>

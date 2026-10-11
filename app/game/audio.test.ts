@@ -103,6 +103,7 @@ class FakeAudioContext {
   readonly sampleRate = 8_000;
   readonly sources: FakeSourceNode[] = [];
   readonly panners: FakeStereoPannerNode[] = [];
+  readonly filters: FakeBiquadFilterNode[] = [];
   currentTime = 10;
   state: "running" | "suspended" | "closed" = "running";
   close = vi.fn(async () => {
@@ -151,7 +152,9 @@ class FakeAudioContext {
   }
 
   createBiquadFilter(): FakeBiquadFilterNode {
-    return new FakeBiquadFilterNode();
+    const filter = new FakeBiquadFilterNode();
+    this.filters.push(filter);
+    return filter;
   }
 
   createWaveShaper(): FakeWaveShaperNode {
@@ -242,5 +245,63 @@ describe("game audio lifecycle", () => {
     expect(context.close).toHaveBeenCalledTimes(1);
     expect(context.sources).toHaveLength(sourceCount);
     expect(context.sources.every((source) => source.stopCalls.length >= 2)).toBe(true);
+  });
+
+  it.each([
+    { kind: "fire" as const, minimumSources: 8, minimumStartTimes: 4 },
+    { kind: "capture" as const, minimumSources: 14, minimumStartTimes: 7 },
+  ])("builds a layered $kind impact and lets stop cancel its scheduled layers", ({ kind, minimumSources, minimumStartTimes }) => {
+    installFakeAudioContext();
+    const audio = createGameAudio(() => true);
+
+    audio.play(kind, { delay: 0.4 });
+
+    const context = FakeAudioContext.instances[0];
+    const impactSources = [...context.sources];
+    const startTimes = impactSources.map((source) => source.startCalls[0]).filter((time) => time !== undefined);
+    expect(impactSources.length).toBeGreaterThanOrEqual(minimumSources);
+    expect(startTimes.length).toBe(impactSources.length);
+    expect(new Set(startTimes).size).toBeGreaterThanOrEqual(minimumStartTimes);
+    expect(Math.min(...startTimes)).toBeCloseTo(10.4);
+
+    audio.stop();
+
+    expect(impactSources.every((source) => source.stopCalls.length >= 2)).toBe(true);
+  });
+
+  it("makes shell pass-bys from descending filtered noise and schedules them after delay", () => {
+    installFakeAudioContext();
+    const audio = createGameAudio(() => true);
+
+    audio.play("shell", { pan: -0.55, delay: 0.8 });
+
+    const context = FakeAudioContext.instances[0];
+    expect(context.sources.length).toBeGreaterThanOrEqual(2);
+    expect(context.sources.every((source) => source instanceof FakeBufferSourceNode)).toBe(true);
+    expect(context.sources.every((source) => source.startCalls[0] >= 10.8)).toBe(true);
+    expect(context.filters.some((filter) => {
+      const initial = filter.frequency.events.find((event) => event.method === "set")?.value;
+      return filter.frequency.events.some((event) => event.method === "linear" && event.value !== undefined && initial !== undefined && event.value < initial);
+    })).toBe(true);
+
+    audio.stop();
+    expect(context.sources.every((source) => source.stopCalls.length >= 2)).toBe(true);
+  });
+
+  it("stages debris fragments after the requested delay and cancels their scheduled impacts", () => {
+    installFakeAudioContext();
+    const audio = createGameAudio(() => true);
+
+    audio.play("debris", { pan: 0.3, delay: 0.55 });
+
+    const context = FakeAudioContext.instances[0];
+    const debrisSources = [...context.sources];
+    const startTimes = debrisSources.map((source) => source.startCalls[0]).filter((time) => time !== undefined);
+    expect(debrisSources.length).toBeGreaterThanOrEqual(10);
+    expect(Math.min(...startTimes)).toBeCloseTo(10.565);
+    expect(Math.max(...startTimes)).toBeGreaterThan(11.3);
+
+    audio.stop();
+    expect(debrisSources.every((source) => source.stopCalls.length >= 2)).toBe(true);
   });
 });

@@ -24,7 +24,8 @@ import type {
   ThemeId,
 } from "./types";
 import { createGameAudio } from "./audio";
-import { AIM_SECONDS, BURST_SETTLE_MS, IMPACT_SETTLE_MS, MOVE_SETTLE_MS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS } from "./animation";
+import { BURST_SETTLE_MS, MOVE_SETTLE_MS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS } from "./animation";
+import { buildShotCues, impactDelayMs } from "./combat-presentation";
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -157,12 +158,15 @@ export function useGameController() {
           victimIds: result.capture.victimIds,
           burstPositions: [],
         });
-        movedWithVictims.filter(piece => result.capture.attackerIds.includes(piece.id)).slice(0, 4).forEach((piece, index) => {
-          soundRef.current?.play("fire", { pan: (piece.col - 1.5) / 2, delay: AIM_SECONDS + index * .045 });
+        const cues = buildShotCues(movedWithVictims, result.capture.attackerIds, result.capture.victimIds);
+        cues.forEach(({attacker,delay}) => {
+          const pan=(attacker.col-1.5)/2;
+          soundRef.current?.play("fire", {pan,delay});
+          soundRef.current?.play("shell", {pan,delay:delay+.1,duration:.48});
         });
         // Let the physical shells arc across the board before rules state removes
         // their targets; the visual flight never determines whether a hit lands.
-        await wait(IMPACT_SETTLE_MS);
+        await wait(impactDelayMs(cues));
         if (token !== actionToken.current) return;
         setPieces((current) => current.filter((piece) => !victimSet.has(piece.id)));
         setFx((current) => ({
@@ -172,7 +176,12 @@ export function useGameController() {
             .filter((piece) => victimSet.has(piece.id))
             .map((piece) => ({ row: piece.row, col: piece.col })),
         }));
-        soundRef.current?.play("capture");
+        const impacts = movedWithVictims.filter(piece => victimSet.has(piece.id));
+        impacts.forEach((piece,index) => {
+          const pan=(piece.col-1.5)/2;
+          soundRef.current?.play("capture",{pan,delay:index*.04});
+          soundRef.current?.play("debris",{pan,delay:.32+index*.04,duration:1.8});
+        });
         setScars(current => {
           const impacts = movedWithVictims.filter(piece => victimSet.has(piece.id)).map(piece => ({ row: piece.row, col: piece.col }));
           return [...current, ...impacts].filter((p, i, all) => all.findIndex(other => other.row === p.row && other.col === p.col) === i);

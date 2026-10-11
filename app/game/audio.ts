@@ -4,7 +4,9 @@ export type GameAudioKind =
   | "turn"
   | "dice"
   | "fire"
+  | "shell"
   | "capture"
+  | "debris"
   | "win";
 
 export interface GameAudioOptions {
@@ -27,6 +29,7 @@ type AudioContextConstructor = new () => AudioContext;
 type FilterOptions = {
   type: BiquadFilterType;
   frequency: number;
+  endFrequency?: number;
   q?: number;
 };
 
@@ -59,8 +62,10 @@ const DEFAULT_DURATIONS: Record<GameAudioKind, number> = {
   move: 0.92,
   turn: 0.33,
   dice: 0.58,
-  fire: 0.72,
-  capture: 0.95,
+  fire: 0.86,
+  shell: 0.4,
+  capture: 1.08,
+  debris: 0.98,
   win: 1.15,
 };
 
@@ -209,6 +214,7 @@ function addOscillator(
     const filter = voice.context.createBiquadFilter();
     filter.type = options.filter.type;
     setParam(filter.frequency, options.filter.frequency, start);
+    if (options.filter.endFrequency !== undefined) linearRamp(filter.frequency, options.filter.endFrequency, end);
     if (options.filter.q !== undefined) setParam(filter.Q, options.filter.q, start);
     oscillator.connect(filter);
     voice.nodes.push(filter);
@@ -278,6 +284,7 @@ function addNoise(
     const filter = voice.context.createBiquadFilter();
     filter.type = options.filter.type;
     setParam(filter.frequency, options.filter.frequency, start);
+    if (options.filter.endFrequency !== undefined) linearRamp(filter.frequency, options.filter.endFrequency, end);
     if (options.filter.q !== undefined) setParam(filter.Q, options.filter.q, start);
     source.connect(filter);
     voice.nodes.push(filter);
@@ -397,9 +404,9 @@ function addClack(
 
 function buildSelect(voice: Voice, noise: AudioBuffer | null) {
   // A tiny latch click: filtered metal noise with two short resonant partials.
-  addNoise(voice, noise, { duration: 0.055, gain: 0.072, filter: { type: "bandpass", frequency: 2450, q: 1.7 }, release: 0.05 });
-  addOscillator(voice, { frequency: 1680, endFrequency: 920, duration: 0.06, gain: 0.052, waveform: "triangle", filter: { type: "bandpass", frequency: 1650, q: 2.1 }, release: 0.052 });
-  addOscillator(voice, { frequency: 840, endFrequency: 610, duration: 0.085, gain: 0.03, waveform: "sine", filter: { type: "bandpass", frequency: 900, q: 1.2 }, release: 0.075 });
+  addNoise(voice, noise, { duration: 0.055, gain: 0.034, filter: { type: "bandpass", frequency: 2450, q: 1.7 }, release: 0.05 });
+  addOscillator(voice, { frequency: 1680, endFrequency: 920, duration: 0.06, gain: 0.024, waveform: "triangle", filter: { type: "bandpass", frequency: 1650, q: 2.1 }, release: 0.052 });
+  addOscillator(voice, { frequency: 840, endFrequency: 610, duration: 0.085, gain: 0.014, waveform: "sine", filter: { type: "bandpass", frequency: 900, q: 1.2 }, release: 0.075 });
 }
 
 function buildTurn(voice: Voice, noise: AudioBuffer | null) {
@@ -434,29 +441,53 @@ function buildDice(voice: Voice, noise: AudioBuffer | null, sequence: number) {
   let offset = 0.018;
   for (let index = 0; index < taps; index += 1) {
     const isFinal = index === taps - 1;
-    const level = isFinal ? 0.078 : 0.035 + random() * 0.024;
+    const level = isFinal ? 0.05 : 0.021 + random() * 0.014;
     addClack(voice, noise, Math.min(offset, usable - 0.04), level, (random() - 0.5) * 0.3, isFinal);
     offset += 0.047 + random() * 0.055;
   }
 }
 
 function buildFire(voice: Voice, noise: AudioBuffer | null) {
-  // The cannon starts with a low pressure impulse, then a saturated filtered boom and bolt click.
-  addOscillator(voice, { frequency: 58, endFrequency: 31, duration: Math.min(0.42, voice.duration * 0.68), gain: 0.24, waveform: "sine", filter: { type: "lowpass", frequency: 150, q: 0.85 }, attack: 0.003, release: 0.31, echo: true });
-  addNoise(voice, noise, { offset: 0.006, duration: Math.min(0.56, voice.duration * 0.8), gain: 0.18, filter: { type: "lowpass", frequency: 640, q: 0.72 }, saturation: true, attack: 0.004, release: 0.42, loop: true, echo: true });
-  addNoise(voice, noise, { duration: Math.min(0.12, voice.duration * 0.28), gain: 0.075, filter: { type: "highpass", frequency: 1500, q: 0.75 }, attack: 0.002, release: 0.095 });
-  addOscillator(voice, { frequency: 235, endFrequency: 92, offset: 0.018, duration: Math.min(0.24, voice.duration * 0.4), gain: 0.075, waveform: "triangle", filter: { type: "bandpass", frequency: 420, q: 0.8 }, attack: 0.004, release: 0.19 });
+  // Breech latch, pressure impulse and a decaying broadband report make the shot read as a cannon, not a beam.
+  addClack(voice, noise, 0, 0.068, -0.08);
+  addClack(voice, noise, 0.042, 0.046, 0.1, true);
+  // Upper body harmonic keeps the thump audible on small phone speakers.
+  addOscillator(voice, { frequency: 126, endFrequency: 68, duration: .2, gain: .095, waveform: "triangle", filter: { type: "lowpass", frequency: 420, q: .65 }, attack: .002, release: .18 });
+  addOscillator(voice, { frequency: 49, endFrequency: 27, duration: Math.min(0.48, voice.duration * 0.62), gain: 0.3, waveform: "sine", filter: { type: "lowpass", frequency: 128, q: 0.72 }, attack: 0.002, release: 0.39, echo: true });
+  addNoise(voice, noise, { offset: 0.003, duration: Math.min(0.16, voice.duration * 0.24), gain: 0.2, filter: { type: "bandpass", frequency: 720, endFrequency: 360, q: 0.55 }, saturation: true, attack: 0.001, release: 0.14, panOffset: -0.04 });
+  addNoise(voice, noise, { offset: 0.009, duration: Math.min(0.3, voice.duration * 0.42), gain: 0.17, filter: { type: "lowpass", frequency: 1450, endFrequency: 420, q: 0.62 }, saturation: true, attack: 0.003, release: 0.26, echo: true });
+  addNoise(voice, noise, { offset: 0.045, duration: Math.min(0.72, voice.duration * 0.88), gain: 0.105, filter: { type: "lowpass", frequency: 620, endFrequency: 190, q: 0.58 }, attack: 0.012, release: 0.64, loop: true, echo: true, panOffset: 0.12 });
+}
+
+function buildShell(voice: Voice, noise: AudioBuffer | null) {
+  // A descending filtered noise pass is air and pressure rushing by, with no pitched laser sweep.
+  addNoise(voice, noise, { duration: Math.min(0.36, voice.duration * 0.92), gain: 0.105, filter: { type: "bandpass", frequency: 2450, endFrequency: 520, q: 0.72 }, attack: 0.008, release: 0.24, panOffset: -0.08 });
+  addNoise(voice, noise, { offset: 0.035, duration: Math.min(0.24, voice.duration * 0.62), gain: 0.035, filter: { type: "lowpass", frequency: 780, endFrequency: 260, q: 0.62 }, attack: 0.012, release: 0.19, echo: true, panOffset: 0.12 });
 }
 
 function buildCapture(voice: Voice, noise: AudioBuffer | null) {
-  // A ground hit, falling debris hiss, and offset metallic fragments create a wider impact.
-  addOscillator(voice, { frequency: 67, endFrequency: 34, duration: 0.48, gain: 0.19, waveform: "sine", filter: { type: "lowpass", frequency: 180, q: 0.8 }, attack: 0.004, release: 0.39, echo: true });
-  addNoise(voice, noise, { offset: 0.025, duration: 0.72, gain: 0.105, filter: { type: "lowpass", frequency: 1150, q: 0.52 }, attack: 0.035, release: 0.62, loop: true, echo: true });
-  const fragments = [0.12, 0.26, 0.41, 0.56, 0.7];
+  // Detonation has a sub impact, a brief cracked report, then a wide falling rubble/aftershock bed.
+  addOscillator(voice, { frequency: 148, endFrequency: 76, duration: .24, gain: .085, waveform: "triangle", filter: { type: "lowpass", frequency: 480, q: .6 }, attack: .002, release: .21 });
+  addOscillator(voice, { frequency: 54, endFrequency: 26, duration: Math.min(0.58, voice.duration * 0.58), gain: 0.28, waveform: "sine", filter: { type: "lowpass", frequency: 145, q: 0.7 }, attack: 0.003, release: 0.48, echo: true });
+  addNoise(voice, noise, { offset: 0.003, duration: Math.min(0.2, voice.duration * 0.2), gain: 0.21, filter: { type: "lowpass", frequency: 1850, endFrequency: 760, q: 0.58 }, saturation: true, attack: 0.001, release: 0.18, echo: true });
+  addNoise(voice, noise, { offset: 0.016, duration: Math.min(0.72, voice.duration * 0.74), gain: 0.13, filter: { type: "lowpass", frequency: 1100, endFrequency: 270, q: 0.52 }, attack: 0.018, release: 0.62, loop: true, echo: true });
+  addNoise(voice, noise, { offset: 0.006, duration: Math.min(0.16, voice.duration * 0.18), gain: 0.087, filter: { type: "highpass", frequency: 2350, endFrequency: 820, q: 0.7 }, attack: 0.001, release: 0.14, panOffset: -0.3 });
+  const fragments = [0.13, 0.31, 0.5, 0.7, 0.88];
   fragments.forEach((offset, index) => {
-    addClack(voice, noise, offset, 0.052 - index * 0.004, (index % 2 === 0 ? 1 : -1) * (0.22 + index * 0.04), index === 0);
+    const level = 0.048 - index * 0.004;
+    addClack(voice, noise, offset, level, (index % 2 === 0 ? 1 : -1) * (0.22 + index * 0.04), index === 0 || index === 4);
   });
-  addOscillator(voice, { frequency: 620, endFrequency: 235, offset: 0.08, duration: 0.56, gain: 0.043, waveform: "triangle", filter: { type: "bandpass", frequency: 850, q: 1.5 }, attack: 0.009, release: 0.5, panOffset: 0.34 });
+  addNoise(voice, noise, { offset: 0.34, duration: Math.min(0.56, voice.duration * 0.56), gain: 0.052, filter: { type: "bandpass", frequency: 1050, endFrequency: 430, q: 0.76 }, attack: 0.012, release: 0.49, echo: true, panOffset: 0.38 });
+}
+
+function buildDebris(voice: Voice, noise: AudioBuffer | null) {
+  // A soft falling grit bed followed by spaced, asymmetrical pieces landing around the impact site.
+  addNoise(voice, noise, { offset: 0.015, duration: Math.min(0.7, voice.duration * 0.74), gain: 0.065, filter: { type: "lowpass", frequency: 1700, endFrequency: 340, q: 0.65 }, attack: 0.012, release: 0.61, loop: true, echo: true, panOffset: -0.08 });
+  const fragments = [0.07, 0.23, 0.42, 0.64, 0.81];
+  fragments.forEach((offset, index) => {
+    const level = 0.034 + (index % 2) * 0.008;
+    addClack(voice, noise, offset, level, index % 2 === 0 ? -0.34 : 0.32, index === 1 || index === 4);
+  });
 }
 
 function buildWin(voice: Voice) {
@@ -636,7 +667,9 @@ export function createGameAudio(enabledGetter: () => boolean): GameAudio {
         case "move": buildMove(voice, noiseBuffer); break;
         case "dice": buildDice(voice, noiseBuffer, playSequence); break;
         case "fire": buildFire(voice, noiseBuffer); break;
+        case "shell": buildShell(voice, noiseBuffer); break;
         case "capture": buildCapture(voice, noiseBuffer); break;
+        case "debris": buildDebris(voice, noiseBuffer); break;
         case "win": buildWin(voice); break;
       }
 

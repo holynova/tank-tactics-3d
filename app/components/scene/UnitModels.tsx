@@ -1,378 +1,267 @@
 "use client";
 
-import { Float, useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import type { PlayerColor, ThemeId } from "../../game/types";
-import { THEMES } from "../../game/themes";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import type { PlayerColor, ThemeId } from "../../game/types";
+import { getMarkTexture, getSurfaceTextures } from "./industrial-materials";
+import { AIM_SECONDS } from "../../game/animation";
+
+export interface UnitMotionState {
+  moving: boolean; turning: boolean; phase: number; travel: number; turn: number;
+}
 
 export interface GameUnitProps {
-  themeId: ThemeId;
-  color: PlayerColor;
-  selected: boolean;
-  disabled?: boolean;
-  variant?: number;
-  aimAngle?: number;
-  firing?: boolean;
+  themeId: ThemeId; color: PlayerColor; selected: boolean; disabled?: boolean;
+  variant?: number; aimAngle?: number; firing?: boolean;
+  motion?: React.RefObject<UnitMotionState>;
 }
+type Finish = "paint" | "steel" | "dark" | "rubber" | "brass" | "lamp";
+type BakedParts = Array<{ finish: Finish; geometry: THREE.BufferGeometry }>;
+type Vec = [number, number, number];
+const decorativeRaycast: THREE.Mesh["raycast"] = () => undefined;
 
-interface UnitPalette {
-  body: string;
-  trim: string;
-  accent: string;
-  glass: string;
-  selected: boolean;
-  disabled: boolean;
-}
-
-const MODEL_ROOT = `${import.meta.env.BASE_URL}models/`;
-const TANK_MODEL = `${MODEL_ROOT}main-battle-tank.glb`;
-const SPG_MODEL = `${MODEL_ROOT}self-propelled-gun.glb`;
-const TRACK_GEOMETRY = new THREE.BoxGeometry(0.16, 0.16, 0.88);
-const ROLLER_GEOMETRY = new THREE.CylinderGeometry(0.073, 0.073, 0.065, 10);
-const SHOULDER_GEOMETRY = new THREE.BoxGeometry(0.12, 0.11, 0.64);
-const UNIT_MARKER_GEOMETRY = new THREE.BoxGeometry(0.065, 0.045, 0.04);
-const PLOW_GEOMETRY = new THREE.BoxGeometry(0.72, 0.105, 0.15);
-
-function addStaticInstances(
-  parent: THREE.Group,
-  geometry: THREE.BufferGeometry,
-  material: THREE.Material,
-  transforms: Array<{ position: THREE.Vector3; rotation?: THREE.Euler }>,
-) {
-  const instances = new THREE.InstancedMesh(geometry, material, transforms.length);
-  const object = new THREE.Object3D();
-  transforms.forEach(({ position, rotation }, index) => {
-    object.position.copy(position);
-    object.rotation.copy(rotation ?? new THREE.Euler());
-    object.updateMatrix();
-    instances.setMatrixAt(index, object.matrix);
-  });
-  instances.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  instances.castShadow = true;
-  instances.receiveShadow = true;
-  parent.add(instances);
-  return instances;
-}
-
-function getPalette(themeId: ThemeId, color: PlayerColor, selected: boolean, disabled: boolean): UnitPalette {
-  const theme = THEMES[themeId];
-  return {
-    body: color === "red" ? theme.red : theme.blue,
-    trim: themeId === "lunar" ? "#18202c" : themeId === "sky" ? "#242b38" : "#192530",
-    accent: theme.accent,
-    glass: color === "red" ? "#ffca75" : "#7cecff",
-    selected: selected && !disabled,
-    disabled,
-  };
-}
-
-function SelectionFeedback({ palette }: { palette: UnitPalette }) {
-  if (!palette.selected) return null;
-  return (
-    <group>
-      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.48, 0.53, 48]} />
-        <meshBasicMaterial
-          color={palette.accent}
-          transparent
-          opacity={0.95}
-          depthWrite={false}
-          toneMapped={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.59, 0.605, 48]} />
-        <meshBasicMaterial color={palette.accent} transparent opacity={0.4} depthWrite={false} />
-      </mesh>
-    </group>
-  );
-}
-
-function recolorAsset(scene: THREE.Group, palette: UnitPalette, model: string) {
-  const clone = scene.clone(true);
-  const ownedMaterials = new Set<THREE.Material>();
-  const modelRoot = clone.children.find((child) => child.name === model) ?? clone;
-
-  // The source models expose turret parts as named, separate GLTF nodes. Gather
-  // those pieces around their native pivot so the barrel can traverse to aim.
-  const pivot = new THREE.Group();
-  pivot.name = "animated-cannon-turret";
-  pivot.position.set(0, model === "main-battle-tank" ? 2.09 : 2.08, 0);
-  const turretParts = modelRoot.children.filter((child) => child.name === "turret");
-  for (const part of turretParts) {
-    part.position.sub(pivot.position);
-    modelRoot.remove(part);
-    pivot.add(part);
+/** Small mechanical details are baked by finish: one draw call per material, not per bolt. */
+class Parts {
+  geometries = new Map<Finish, THREE.BufferGeometry[]>();
+  add(finish: Finish, geometry: THREE.BufferGeometry, position: Vec, rotation: Vec = [0, 0, 0]) {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry;
+    const matrix = new THREE.Matrix4().compose(new THREE.Vector3(...position), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)), new THREE.Vector3(1, 1, 1));
+    g.applyMatrix4(matrix);
+    const bucket = finish === "brass" ? "steel" : finish === "rubber" ? "dark" : finish;
+    const tint = new THREE.Color(finish === "brass" ? "#c6b382" : finish === "rubber" ? "#667074" : "#ffffff");
+    const colors = new Float32Array(g.attributes.position.count * 3);
+    for(let i=0;i<colors.length;i+=3){colors[i]=tint.r;colors[i+1]=tint.g;colors[i+2]=tint.b;}
+    g.setAttribute("color",new THREE.BufferAttribute(colors,3));
+    const list = this.geometries.get(bucket) ?? [];
+    list.push(g); this.geometries.set(bucket, list);
+    if (g !== geometry) geometry.dispose();
   }
-  if (turretParts.length) modelRoot.add(pivot);
+  box(f: Finish, size: Vec, p: Vec, r: Vec = [0, 0, 0], bevel = 0.014) {
+    this.add(f, new RoundedBoxGeometry(...size, 1, Math.min(bevel, ...size.map(s => s * .22))), p, r);
+  }
+  cylinder(f: Finish, radius: number, length: number, p: Vec, r: Vec = [0, 0, 0], bottom = radius) {
+    this.add(f, new THREE.CylinderGeometry(radius, bottom, length, 12), p, r);
+  }
+  bake(): BakedParts {
+    return [...this.geometries].map(([finish, parts]) => {
+      const geometry = mergeGeometries(parts)!;
+      parts.forEach(g => g.dispose());
+      return { finish, geometry };
+    });
+  }
+}
 
-  const bounds = new THREE.Box3().setFromObject(clone);
-  const size = bounds.getSize(new THREE.Vector3());
-  const center = bounds.getCenter(new THREE.Vector3());
-  const scale = 1.17 / Math.max(size.z, 0.001);
-  clone.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
-
-  clone.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
-    object.castShadow = true;
-    object.receiveShadow = true;
-    const tintMaterial = (source: THREE.Material) => {
-      const material = source.clone();
-      ownedMaterials.add(material);
-      if (material instanceof THREE.MeshStandardMaterial) {
-        if (material.name === "olive") material.color.lerp(new THREE.Color(palette.body), 0.78);
-        else if (material.name === "oliveDark") material.color.lerp(new THREE.Color(palette.body), 0.26);
-        else if (material.name === "steel") material.color.lerp(new THREE.Color(palette.trim), 0.1);
-        if (palette.selected && (material.name === "olive" || material.name === "oliveDark")) {
-          material.emissive.set(palette.accent);
-          material.emissiveIntensity = 0.14;
-        }
-        if (palette.disabled) {
-          material.transparent = true;
-          material.opacity = 0.3;
-          material.depthWrite = false;
-        }
+function hullGeometry(walker: boolean): BakedParts {
+  const p = new Parts();
+  if (!walker) {
+    p.box("dark", [.86, .18, 1.02], [0, .23, -.06]);
+    p.box("paint", [.8, .13, .88], [0, .35, -.05]);
+    p.box("paint", [.82, .12, .26], [0, .32, .48], [.24, 0, 0]);
+    p.box("steel", [.76, .065, .09], [0, .24, .62]);
+    for (const side of [-1, 1]) {
+      p.box("rubber", [.23, .27, 1.12], [side * .48, .16, -.055], [0, 0, 0], .07);
+      p.box("paint", [.18, .065, 1.1], [side * .48, .32, -.05]);
+      for (let i = 0; i < 6; i++) {
+        const z = -.46 + i * .165;
+        p.cylinder("dark", .114, .045, [side * .601, .155, z], [0, 0, Math.PI / 2]);
+        p.cylinder("steel", .071, .052, [side * .609, .155, z], [0, 0, Math.PI / 2]);
+        p.cylinder("brass", .026, .058, [side * .616, .155, z], [0, 0, Math.PI / 2]);
       }
-      return material;
-    };
-    object.material = Array.isArray(object.material)
-      ? object.material.map(tintMaterial)
-      : tintMaterial(object.material);
-  });
-
-  const normalized = new THREE.Group();
-  normalized.add(clone);
-  const trackMaterial = new THREE.MeshStandardMaterial({ color: palette.trim, metalness: 0.78, roughness: 0.46 });
-  ownedMaterials.add(trackMaterial);
-  for (const side of [-1, 1]) {
-    const track = new THREE.Mesh(TRACK_GEOMETRY, trackMaterial);
-    track.position.set(side * 0.32, 0.095, -0.015);
-    track.castShadow = true;
-    normalized.add(track);
-  }
-  const rollerMaterial = new THREE.MeshStandardMaterial({ color: palette.body, metalness: 0.72, roughness: 0.34 });
-  ownedMaterials.add(rollerMaterial);
-  addStaticInstances(
-    normalized,
-    ROLLER_GEOMETRY,
-    rollerMaterial,
-    [-1, 1].flatMap((side) => [-0.34, -0.12, 0.12, 0.34].map((z) => ({
-      position: new THREE.Vector3(side * 0.405, 0.09, z),
-      rotation: new THREE.Euler(0, 0, Math.PI / 2),
-    }))),
-  );
-  const shoulderMaterial = new THREE.MeshStandardMaterial({ color: palette.body, metalness: 0.64, roughness: 0.38 });
-  ownedMaterials.add(shoulderMaterial);
-  addStaticInstances(
-    normalized,
-    SHOULDER_GEOMETRY,
-    shoulderMaterial,
-    [-1, 1].map((side) => ({ position: new THREE.Vector3(side * 0.31, 0.245, -0.04) })),
-  );
-  const markerMaterial = new THREE.MeshBasicMaterial({ color: palette.accent, toneMapped: false });
-  ownedMaterials.add(markerMaterial);
-  addStaticInstances(
-    normalized,
-    UNIT_MARKER_GEOMETRY,
-    markerMaterial,
-    [-1, 1].map((side) => ({ position: new THREE.Vector3(side * 0.31, 0.252, 0.27) })),
-  );
-  const plowMaterial = new THREE.MeshStandardMaterial({ color: palette.trim, metalness: 0.76, roughness: 0.43 });
-  ownedMaterials.add(plowMaterial);
-  const plow = new THREE.Mesh(PLOW_GEOMETRY, plowMaterial);
-  plow.position.set(0, 0.09, 0.52);
-  plow.castShadow = true;
-  normalized.add(plow);
-  normalized.userData.ownedMaterials = [...ownedMaterials];
-  normalized.scale.setScalar(scale);
-  return normalized;
-}
-
-function ImportedArtillery({
-  model,
-  modelName,
-  palette,
-  aimAngle,
-  firing,
-}: {
-  model: string;
-  modelName: string;
-  palette: UnitPalette;
-  aimAngle: number;
-  firing: boolean;
-}) {
-  const { scene } = useGLTF(model);
-  const vehicle = useMemo(
-    () => recolorAsset(scene, palette, modelName),
-    [modelName, palette, scene],
-  );
-  useEffect(() => () => {
-    const materials = vehicle.userData.ownedMaterials as THREE.Material[] | undefined;
-    materials?.forEach((material) => material.dispose());
-  }, [vehicle]);
-  const root = useRef<THREE.Group>(null);
-  const firedAt = useRef(0);
-  const wasFiring = useRef(false);
-
-  useFrame(({ clock }, delta) => {
-    if (firing && !wasFiring.current) firedAt.current = clock.elapsedTime;
-    wasFiring.current = firing;
-    const recoilTime = clock.elapsedTime - firedAt.current;
-    const recoil = firing && recoilTime >= 0 ? Math.sin(recoilTime * 46) * Math.exp(-recoilTime * 17) : 0;
-    if (root.current) {
-      root.current.position.z = -recoil * 0.075;
-      root.current.rotation.x = -recoil * 0.025;
+      p.box("dark", [.12, .07, .085], [side * .29, .37, .52]);
+      p.box("lamp", [.078, .035, .018], [side * .29, .375, .568]);
+      p.cylinder("steel", .036, .27, [side * .31, .35, -.49], [Math.PI / 2, 0, 0]);
+      p.cylinder("dark", .022, .028, [side * .31, .35, -.636], [Math.PI / 2, 0, 0]);
+      for (const z of [-.44, -.24, .08, .37]) p.cylinder("brass", .012, .012, [side * .39, .427, z]);
     }
-    const turret = vehicle.getObjectByName("animated-cannon-turret");
-    if (turret) turret.rotation.y = THREE.MathUtils.damp(turret.rotation.y, aimAngle, 13, delta);
+    p.box("dark", [.4, .022, .22], [0, .425, -.38]);
+    for (let i = 0; i < 8; i++) p.box("steel", [.018, .016, .22], [-.16 + i * .046, .44, -.38]);
+    p.box("steel", [.24, .022, .15], [0, .433, .34]);
+    p.cylinder("dark", .035, .07, [.3, .45, -.37]);
+    p.cylinder("steel", .006, .42, [.3, .69, -.37]);
+  } else {
+    p.box("dark", [.54, .18, .6], [0, .46, 0]);
+    p.box("paint", [.6, .15, .51], [0, .57, -.015]);
+    for (const side of [-1, 1]) {
+      p.box("dark", [.13, .09, .14], [side * .23, .6, .28]);
+      p.box("lamp", [.07, .035, .018], [side * .23, .615, .357]);
+      p.box("steel", [.055, .14, .2], [side * .32, .57, -.18]);
+    }
+  }
+  return p.bake();
+}
+
+function turretGeometry(walker: boolean) {
+  const p = new Parts(), b = new Parts();
+  p.cylinder("steel", .24, .06, [0, .02, 0]);
+  p.cylinder("dark", .22, .065, [0, .075, 0]);
+  p.box("paint", [walker ? .5 : .61, .26, .57], [0, .2, -.015], [0, 0, 0], .05);
+  for (const side of [-1, 1]) {
+    p.box("steel", [.05, .16, .34], [side * .31, .19, -.045]);
+    p.box("paint", [.065, .12, .2], [side * .34, .2, .04], [0, side * -.14, 0]);
+    for (const z of [-.15, 0, .15]) p.cylinder("brass", .013, .016, [side * .3, .345, z]);
+    p.box("dark", [.065, .075, .16], [side * .2, .367, .07]);
+    p.box("lamp", [.042, .025, .015], [side * .2, .38, .16]);
+  }
+  p.cylinder("dark", .12, .036, [0, .35, -.11]);
+  p.cylinder("steel", .085, .026, [0, .374, -.11]);
+  p.box("steel", [.13, .022, .035], [0, .4, -.1]);
+  p.box("dark", [.33, .08, .13], [0, .16, -.32]);
+  for(let i=0;i<6;i++)p.box("steel", [.027, .068, .015], [-.13+i*.052, .16, -.39]);
+  const length = walker ? .48 : .78;
+  b.cylinder("steel", .12, .26, [0, .2, .34], [Math.PI / 2, 0, 0], .14);
+  b.cylinder("dark", .083, length, [0, .2, .48 + length / 2], [Math.PI / 2, 0, 0]);
+  b.cylinder("steel", .063, length + .07, [0, .2, .48 + length / 2], [Math.PI / 2, 0, 0]);
+  for(let i=0;i<4;i++)b.cylinder(i===1?"paint":"steel", .08-i*.003, .043, [0, .2, .51+i*length*.23], [Math.PI / 2, 0, 0]);
+  b.cylinder("dark", walker ? .105 : .078, .15, [0, .2, .5+length], [Math.PI / 2, 0, 0]);
+  b.cylinder("steel", walker ? .12 : .085, .032, [0, .2, .59+length], [Math.PI / 2, 0, 0]);
+  b.cylinder("rubber", walker ? .085 : .058, .005, [0, .2, .607+length], [Math.PI / 2, 0, 0]);
+  return { turret: p.bake(), barrel: b.bake() };
+}
+const hulls = new Map<boolean, BakedParts>();
+const turrets = new Map<boolean, ReturnType<typeof turretGeometry>>();
+function geometryFor(walker:boolean) {
+  if(!hulls.has(walker))hulls.set(walker,hullGeometry(walker));
+  if(!turrets.has(walker))turrets.set(walker,turretGeometry(walker));
+  return {hull:hulls.get(walker)!, ...turrets.get(walker)!};
+}
+
+function useFinishes(color: PlayerColor, themeId: ThemeId) {
+  const materials = useMemo(() => {
+    const steel=getSurfaceTextures("steel"), armor=getSurfaceTextures("armor");
+    const paint = color === "red" ? (themeId === "abyss" ? "#a45037" : "#af5134") : (themeId === "abyss" ? "#6495a3" : "#467b91");
+    const make=(color:string, metalness:number, roughness:number, textures=steel)=>new THREE.MeshStandardMaterial({color,metalness,roughness,...textures,bumpScale:.012,vertexColors:true});
+    return {
+      paint:make(paint,.58,.61,armor), steel:make("#868b8a",.82,.48), dark:make("#363c3d",.72,.7),
+      rubber:make("#14191b",.15,.96), brass:make("#a88b57",.76,.42),
+      lamp:new THREE.MeshStandardMaterial({color:"#ffc16a",emissive:"#ff9b37",emissiveIntensity:2.1,roughness:.25}),
+    } satisfies Record<Finish, THREE.Material>;
+  },[color,themeId]);
+  useEffect(()=>()=>Object.values(materials).forEach(m=>m.dispose()),[materials]);
+  return materials;
+}
+function MeshParts({parts,materials}:{parts:BakedParts;materials:Record<Finish,THREE.Material>}) {
+  return <>{parts.map(({finish,geometry})=><mesh key={finish} geometry={geometry} material={materials[finish]} raycast={decorativeRaycast} castShadow receiveShadow dispose={null}/>)}</>;
+}
+
+let legParts: BakedParts | null = null;
+function getLegGeometry(): BakedParts {
+  if(legParts)return legParts;
+  const buckets=new Map<Finish,THREE.BufferGeometry[]>();
+  let index=0;
+  for(const side of [-1,1])for(const front of [-1,1]){
+    const p=new Parts();
+    p.cylinder("brass",.072,.1,[side*.29,.45,front*.2],[0,0,Math.PI/2]);
+    p.box("paint",[.17,.25,.16],[side*.37,.33,front*.3],[front*-.28,0,side*.36]);
+    p.cylinder("steel",.065,.19,[side*.43,.24,front*.37],[0,0,Math.PI/2]);
+    p.box("steel",[.095,.24,.1],[side*.45,.125,front*.43],[front*.28,0,side*-.14]);
+    p.cylinder("brass",.022,.23,[side*.39,.2,front*.41],[front*.45,0,side*-.2]);
+    p.box("dark",[.23,.06,.27],[side*.46,.035,front*.46]);
+    p.box("paint",[.2,.045,.14],[side*.46,.079,front*.5]);
+    for(const {finish,geometry} of p.bake()){
+      const count=geometry.attributes.position.count;
+      const indices=new Uint16Array(count*4),weights=new Float32Array(count*4);
+      for(let i=0;i<count;i++){indices[i*4]=index;weights[i*4]=1;}
+      geometry.setAttribute("skinIndex",new THREE.Uint16BufferAttribute(indices,4));
+      geometry.setAttribute("skinWeight",new THREE.Float32BufferAttribute(weights,4));
+      const list=buckets.get(finish)??[];list.push(geometry);buckets.set(finish,list);
+    }
+    index++;
+  }
+  legParts=[...buckets].map(([finish,parts])=>{
+    const geometry=mergeGeometries(parts)!;parts.forEach(g=>g.dispose());return {finish,geometry};
   });
-
-  return (
-    <group ref={root}>
-      <primitive object={vehicle} dispose={null} />
-    </group>
-  );
+  return legParts;
 }
-
-function WalkerCannon({ palette, aimAngle, firing, variant }: {
-  palette: UnitPalette;
-  aimAngle: number;
-  firing: boolean;
-  variant: number;
-}) {
-  const turret = useRef<THREE.Group>(null);
-  const cannon = useRef<THREE.Group>(null);
-  const firedAt = useRef(0);
-  const wasFiring = useRef(false);
-  const trackWheels = Array.from({ length: 5 }, (_, index) => -0.35 + index * 0.175);
-
-  useFrame(({ clock }, delta) => {
-    if (firing && !wasFiring.current) firedAt.current = clock.elapsedTime;
-    wasFiring.current = firing;
-    if (turret.current) turret.current.rotation.y = THREE.MathUtils.damp(turret.current.rotation.y, aimAngle, 13, delta);
-    const elapsed = clock.elapsedTime - firedAt.current;
-    const recoil = firing && elapsed >= 0 ? Math.sin(elapsed * 46) * Math.exp(-elapsed * 17) : 0;
-    if (cannon.current) cannon.current.position.z = -recoil * 0.09;
+function createLegRig(materials:Record<Finish,THREE.Material>) {
+  const object=new THREE.Group();
+  const bones:THREE.Bone[]=[];
+  for(const side of [-1,1])for(const front of [-1,1]){
+    const bone=new THREE.Bone();bone.position.set(side*.24,.46,front*.18);
+    object.add(bone);bones.push(bone);
+  }
+  const skeleton=new THREE.Skeleton(bones);
+  const meshes=getLegGeometry().map(({finish,geometry})=>{
+    const mesh=new THREE.SkinnedMesh(geometry,materials[finish]);
+    mesh.castShadow=true;mesh.receiveShadow=true;mesh.raycast=decorativeRaycast;
+    object.add(mesh);return mesh;
   });
+  object.updateMatrixWorld(true);
+  meshes.forEach(mesh=>mesh.bind(skeleton));
+  return {object,bones,skeleton};
+}
+let beltParts: BakedParts | null = null;
+function TankTracks({materials,motion}:{materials:Record<Finish,THREE.Material>;motion?:React.RefObject<UnitMotionState>}) {
+  const parts=useMemo(()=>{
+    if(!beltParts){const p=new Parts();p.box("dark",[.248,.032,.069],[0,0,0]);p.box("steel",[.244,.012,.018],[0,.019,0]);beltParts=p.bake();}
+    return beltParts;
+  },[]);
+  const instances=useRef<Array<THREE.InstancedMesh|null>>([]);
+  const last=useRef({travel:-1,turn:-1});
+  const dummy=useMemo(()=>new THREE.Object3D(),[]);
+  useFrame(()=>{
+    const travel=motion?.current.travel??0,turn=motion?.current.turn??0;
+    if(last.current.travel===travel&&last.current.turn===turn)return;
+    last.current={travel,turn};
+    const straight=.85,radius=.135,path=2*straight+2*Math.PI*radius;
+    for(let sideIndex=0;sideIndex<2;sideIndex++)for(let link=0;link<32;link++){
+      const side=sideIndex?1:-1;
+      const d=((link/32*path+travel+side*turn*.46)%path+path)%path;
+      let z:number,y:number,angle:number;
+      if(d<straight){z=-straight/2+d;y=.16+radius;angle=0;}
+      else if(d<straight+Math.PI*radius){angle=(d-straight)/radius;z=straight/2+Math.sin(angle)*radius;y=.16+Math.cos(angle)*radius;}
+      else if(d<2*straight+Math.PI*radius){z=straight/2-(d-straight-Math.PI*radius);y=.16-radius;angle=Math.PI;}
+      else{angle=Math.PI+(d-2*straight-Math.PI*radius)/radius;z=-straight/2+Math.sin(angle)*radius;y=.16+Math.cos(angle)*radius;}
+      dummy.position.set(side*.48,y,z-.055);dummy.rotation.set(angle,0,0);dummy.updateMatrix();
+      instances.current.forEach(mesh=>mesh?.setMatrixAt(sideIndex*32+link,dummy.matrix));
+    }
+    instances.current.forEach(mesh=>{if(mesh)mesh.instanceMatrix.needsUpdate=true;});
+  });
+  return <>{parts.map(({finish,geometry},i)=><instancedMesh key={finish} ref={mesh=>{instances.current[i]=mesh;}} args={[geometry,materials[finish],64]} raycast={decorativeRaycast} castShadow receiveShadow dispose={null}/>)}</>;
+}
 
-  return (
-    <group>
-      <mesh position={[0, 0.19, 0]} castShadow>
-        <boxGeometry args={[0.86, 0.2, 0.95]} />
-        <meshStandardMaterial color={palette.body} roughness={0.4} metalness={0.74} />
-      </mesh>
-      <mesh position={[0, 0.12, 0.38]} rotation={[0.18, 0, 0]} castShadow>
-        <boxGeometry args={[0.92, 0.16, 0.24]} />
-        <meshStandardMaterial color={palette.trim} roughness={0.44} metalness={0.7} />
-      </mesh>
-      {[-1, 1].map((side) => (
-        <group key={side} position={[side * 0.48, 0.12, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.15, 0.32, 1.06]} />
-            <meshStandardMaterial color={palette.trim} roughness={0.74} metalness={0.58} />
-          </mesh>
-          {trackWheels.map((z, index) => (
-            <mesh key={z} position={[side * 0.09, 0, z]} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[index === 2 ? 0.115 : 0.095, index === 2 ? 0.115 : 0.095, 0.045, 10]} />
-              <meshStandardMaterial color={index % 2 ? palette.body : "#111820"} metalness={0.72} roughness={0.34} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-
-      <mesh position={[0, 0.35, -0.02]} castShadow>
-        <boxGeometry args={[0.52, 0.28, 0.57]} />
-        <meshStandardMaterial color={palette.trim} roughness={0.38} metalness={0.82} />
-      </mesh>
-      <mesh position={[0, 0.48, 0.15]} rotation={[-0.18, 0, 0]} castShadow>
-        <boxGeometry args={[0.72, 0.12, 0.38]} />
-        <meshStandardMaterial color={palette.body} roughness={0.36} metalness={0.78} />
-      </mesh>
-      <mesh position={[0, 0.53, 0.37]}>
-        <boxGeometry args={[0.34, 0.07, 0.025]} />
-        <meshBasicMaterial color={palette.glass} toneMapped={false} />
-      </mesh>
-
-      <group ref={turret} position={[0, 0.55, 0.02]}>
-        <mesh castShadow>
-          <cylinderGeometry args={[0.25, 0.28, 0.18, 10]} />
-          <meshStandardMaterial color={palette.trim} metalness={0.8} roughness={0.35} />
-        </mesh>
-        <group ref={cannon} position={[0, 0.01, 0.25]} rotation={[variant ? 0.025 : -0.015, 0, 0]}>
-          <mesh position={[0, 0, 0.33]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.07, 0.1, 0.72, 10]} />
-            <meshStandardMaterial color={palette.body} metalness={0.82} roughness={0.29} />
-          </mesh>
-          <mesh position={[0, 0, 0.69]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.12, 0.12, 0.09, 10]} />
-            <meshStandardMaterial color={palette.trim} metalness={0.82} roughness={0.28} />
-          </mesh>
-        </group>
-        <mesh position={[0.22, 0.1, -0.04]}>
-          <sphereGeometry args={[0.07, 10, 8]} />
-          <meshBasicMaterial color={palette.glass} toneMapped={false} />
-        </mesh>
-        <mesh position={[-0.19, 0.22, -0.05]} rotation={[0, 0, -0.16]}>
-          <cylinderGeometry args={[0.012, 0.012, 0.33, 6]} />
-          <meshStandardMaterial color="#c6d1d8" metalness={0.84} roughness={0.3} />
-        </mesh>
-      </group>
-      <mesh position={[0.24, 0.53, 0.18]}>
-        <sphereGeometry args={[0.06, 8, 6]} />
-        <meshBasicMaterial color={palette.glass} toneMapped={false} />
-      </mesh>
+export function GameUnit({themeId,color,selected,variant=0,aimAngle=0,firing=false,motion}:GameUnitProps) {
+  const walker=variant%2===1;
+  const geometries=useMemo(()=>geometryFor(walker),[walker]);
+  const materials=useFinishes(color,themeId);
+  const legs=useMemo(()=>walker?createLegRig(materials):null,[walker,materials]);
+  useEffect(()=>()=>legs?.skeleton.dispose(),[legs]);
+  const turret=useRef<THREE.Group>(null), barrel=useRef<THREE.Group>(null);
+  const started=useRef(-10), wasFiring=useRef(false);
+  const mark=useMemo(()=>getMarkTexture(`0${variant+1}`),[variant]);
+  useFrame(({clock},delta)=>{
+    if(firing&&!wasFiring.current)started.current=clock.elapsedTime;
+    wasFiring.current=firing;
+    const t=clock.elapsedTime-started.current-AIM_SECONDS;
+    if(turret.current){
+      const yaw=turret.current.rotation.y;
+      const difference=Math.atan2(Math.sin(aimAngle-yaw),Math.cos(aimAngle-yaw));
+      turret.current.rotation.y=yaw+difference*(1-Math.exp(-delta*13));
+    }
+    if(barrel.current)barrel.current.position.z=t<0?0:-Math.max(0,Math.sin(t*34))*Math.exp(-t*9)*.13;
+    if(legs){
+      const state=motion?.current;
+      const phase=state?.phase??0,weight=state?.moving?Math.min(1,phase*8,(1-phase)*8):0;
+      legs.bones.forEach((bone,i)=>{
+        const angle=phase*Math.PI*6+(i===0||i===3?0:Math.PI);
+        bone.rotation.x=Math.sin(angle)*.3*weight;
+        bone.rotation.z=Math.cos(angle)*.06*weight*(i<2?-1:1);
+        bone.position.y=.46+Math.max(0,Math.sin(angle))*.075*weight;
+      });
+    }
+  });
+  return <group scale={.93}>
+    <MeshParts parts={geometries.hull} materials={materials}/>
+    {legs?<primitive object={legs.object} dispose={null}/>:<TankTracks materials={materials} motion={motion}/>}
+    <group ref={turret} position={[0,walker ? .62 : .42,0]}>
+      <MeshParts parts={geometries.turret} materials={materials}/>
+      <group ref={barrel} rotation={[-.055,0,0]}><MeshParts parts={geometries.barrel} materials={materials}/></group>
+      {[-1,1].map(side=><mesh key={side} raycast={decorativeRaycast} position={[side*.365,.21,-.09]} rotation={[0,side*Math.PI/2,0]}>
+        <planeGeometry args={[.2,.12]}/><meshStandardMaterial map={mark} transparent alphaTest={.12} polygonOffset polygonOffsetFactor={-2} roughness={.8}/>
+      </mesh>)}
     </group>
-  );
+    {selected&&<mesh raycast={decorativeRaycast} position={[0,.014,0]} rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.61,.635,48]}/><meshBasicMaterial color="#ffc75f" toneMapped={false} transparent opacity={.95}/></mesh>}
+  </group>;
 }
-
-/** Visual-only unit family selection; the controller continues to own all rules. */
-export function GameUnit({
-  themeId,
-  color,
-  selected,
-  disabled = false,
-  variant = 0,
-  aimAngle = 0,
-  firing = false,
-}: GameUnitProps) {
-  const palette = useMemo(
-    () => getPalette(themeId, color, selected, disabled),
-    [themeId, color, selected, disabled],
-  );
-  const useWalker = themeId === "abyss";
-  const artilleryModel = themeId === "sky"
-    ? variant % 2 === 0 ? SPG_MODEL : TANK_MODEL
-    : variant % 2 === 0 ? TANK_MODEL : SPG_MODEL;
-  const modelName = artilleryModel === TANK_MODEL ? "main-battle-tank" : "self-propelled-gun";
-
-  return (
-    <Float
-      enabled={palette.selected}
-      speed={0.8}
-      rotationIntensity={0.025}
-      floatIntensity={0.08}
-      floatingRange={[-0.025, 0.025]}
-    >
-      <group>
-        {useWalker ? (
-          <WalkerCannon palette={palette} aimAngle={aimAngle} firing={firing} variant={variant} />
-        ) : (
-          <ImportedArtillery
-            model={artilleryModel}
-            modelName={modelName}
-            palette={palette}
-            aimAngle={aimAngle}
-            firing={firing}
-          />
-        )}
-        <SelectionFeedback palette={palette} />
-      </group>
-    </Float>
-  );
-}
-
-useGLTF.preload(TANK_MODEL);
-useGLTF.preload(SPG_MODEL);

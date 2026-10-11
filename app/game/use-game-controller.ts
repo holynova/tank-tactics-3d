@@ -24,6 +24,7 @@ import type {
   ThemeId,
 } from "./types";
 import { createGameAudio } from "./audio";
+import { AIM_SECONDS, BURST_SETTLE_MS, IMPACT_SETTLE_MS, MOVE_SETTLE_MS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS } from "./animation";
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -46,6 +47,7 @@ export function useGameController() {
   const [dice, setDice] = useState<DiceResult>({ red: 1, blue: 1 });
   const [winner, setWinner] = useState<PlayerColor | null>(null);
   const [lastMove, setLastMove] = useState<Position | null>(null);
+  const [scars, setScars] = useState<Position[]>([]);
   const [fx, setFx] = useState<CombatFx>({ attackerIds: [], victimIds: [], burstPositions: [] });
   const [events, setEvents] = useState<BattleEvent[]>([
     { id: 1, text: "战术沙盘已就绪", tone: "neutral" },
@@ -58,6 +60,7 @@ export function useGameController() {
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
+    if (!soundEnabled) soundRef.current?.stop();
   }, [soundEnabled]);
 
   useEffect(() => {
@@ -70,6 +73,7 @@ export function useGameController() {
   }, []);
 
   const reset = useCallback(() => {
+    soundRef.current?.stop();
     actionToken.current += 1;
     setPieces(createInitialPieces());
     setTurn("red");
@@ -77,6 +81,7 @@ export function useGameController() {
     setPhase("lobby");
     setWinner(null);
     setLastMove(null);
+    setScars([]);
     setFx({ attackerIds: [], victimIds: [], burstPositions: [] });
     setDice({ red: 1, blue: 1 });
     setEvents([{ id: eventId.current++, text: "新战局已部署", tone: "neutral" }]);
@@ -136,8 +141,10 @@ export function useGameController() {
       setSelectedId(null);
       setLastMove(move.to);
       setPieces(movedWithVictims);
-      soundRef.current?.play("move");
-      await wait(430);
+      const pan = (movingPiece.col - 1.5) / 2;
+      soundRef.current?.play("turn", { pan, duration: MOVE_TURN_SECONDS });
+      soundRef.current?.play("move", { pan, delay: MOVE_TURN_SECONDS, duration: MOVE_TRAVEL_SECONDS });
+      await wait(MOVE_SETTLE_MS);
       if (token !== actionToken.current) return;
 
       if (result.capture.crowdedLines.length) {
@@ -150,10 +157,12 @@ export function useGameController() {
           victimIds: result.capture.victimIds,
           burstPositions: [],
         });
-        soundRef.current?.play("fire");
+        movedWithVictims.filter(piece => result.capture.attackerIds.includes(piece.id)).slice(0, 4).forEach((piece, index) => {
+          soundRef.current?.play("fire", { pan: (piece.col - 1.5) / 2, delay: AIM_SECONDS + index * .045 });
+        });
         // Let the physical shells arc across the board before rules state removes
         // their targets; the visual flight never determines whether a hit lands.
-        await wait(960);
+        await wait(IMPACT_SETTLE_MS);
         if (token !== actionToken.current) return;
         setPieces((current) => current.filter((piece) => !victimSet.has(piece.id)));
         setFx((current) => ({
@@ -164,11 +173,15 @@ export function useGameController() {
             .map((piece) => ({ row: piece.row, col: piece.col })),
         }));
         soundRef.current?.play("capture");
+        setScars(current => {
+          const impacts = movedWithVictims.filter(piece => victimSet.has(piece.id)).map(piece => ({ row: piece.row, col: piece.col }));
+          return [...current, ...impacts].filter((p, i, all) => all.findIndex(other => other.row === p.row && other.col === p.col) === i);
+        });
         addEvent(
           `${activeColor === "red" ? "红方" : "蓝方"}完成 ${result.capture.victimIds.length > 1 ? "双线" : "二打一"}集火`,
           activeColor,
         );
-        await wait(820);
+        await wait(BURST_SETTLE_MS);
         if (token !== actionToken.current) return;
         setFx({ attackerIds: [], victimIds: [], burstPositions: [] });
       } else {
@@ -251,6 +264,7 @@ export function useGameController() {
 
   return {
     pieces,
+    scars,
     turn,
     selectedId,
     phase,

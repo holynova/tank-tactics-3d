@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <strong>经典「二打一」坦克棋的太空轨道重制版 · 纯函数规则引擎与 3D 高台战术沙盘</strong><br>
+  <strong>经典「二打一」坦克棋的太空轨道重制版 · 纯函数规则引擎与工业月面战场</strong><br>
   4×4 空间沙盘 · 侧翼二打一交叉集火 · 拥挤与友军相邻保护 · 3 档 Minimax 战术 AI · 零 CDN 外部依赖
 </p>
 
@@ -21,13 +21,13 @@
 
 - **官方 GitHub Pages 站点**：[https://holynova.github.io/tank-tactics-3d/](https://holynova.github.io/tank-tactics-3d/)
 - **备用镜像站点 (Cloudflare / ChatGPT Site)**：[https://tank-tactics-3d.holy-nova.chatgpt.site/](https://tank-tactics-3d.holy-nova.chatgpt.site/)
-- **参考规则原案**：规则与玩法移植自经典的二打一策略棋局源项目 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)，表现层全新重构为高台俯瞰的深空重炮阵地。
+- **参考规则原案**：规则与玩法移植自经典的二打一策略棋局源项目 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)，表现层按「沉浸式甲板」参考图重构为工业月面重炮阵地。
 
 ---
 
 ## ♟️ 核心战术规则与判定机制
 
-游戏在紧凑的 `4×4` 高台沙盘展开，红方执攻防重炮居第 0 行，蓝方执离子重炮居第 3 行，每方各拥有 4 台战车：
+游戏在紧凑的 `4×4` 金属甲板展开，红方居第 0 行，蓝方居第 3 行；每方各拥有 4 台单位，履带重炮与四足炮台仅外观不同，规则一致：
 
 ```text
     Col 0    Col 1    Col 2    Col 3
@@ -87,7 +87,9 @@ Row 3 [ B ]    [ B ]    [ B ]    [ B ]   <-- 蓝方初始防线（初始朝上�
   * **单指拖拽 / 鼠标左键按住**：360° 环视旋转观察棋盘战局；
   * **双指捏合 / 鼠标滚轮**：平滑推进缩放视图；
   * **平移与复位**：右上角配备快捷 `+` 放大、`-` 缩小与 `⟲` 战术初始视角复位按钮；
-* **电影感打击特效**：真实炮塔转向追踪、后坐力位移、实体弹道抛射、炮口弧光冲击环与金属破片飞溅；
+* **连续机动**：先转向，再平滑行进并停稳；履带链节滚动、四足交替步态与移动扬尘，不再瞬移；
+* **重炮打击特效**：炮塔瞄准、炮管后坐、实体炮弹抛射、炮口焰、命中闪光、冲击环、火星破片与烟尘；焦痕、裂纹和碎块保留至重新部署；
+* **原创分层音效**：Web Audio 合成伺服转向、引擎与履带、骰子碰撞、低频炮声和爆炸碎片；支持左右声场、静音和重开时取消排队声音；
 * **移动端优先 HUD**：全面适配 iOS Safari 底部 Safe Area 与各种异形屏，提供低对比度触觉提示与屏幕朗读辅助支持。
 
 ---
@@ -102,9 +104,11 @@ tank-tactics-3d/
 ├── app/
 │   ├── components/
 │   │   ├── scene/             # Three.js 3D 渲染组件
-│   │   │   ├── Board.tsx      # 4×4 战术沙盘高台模型与网格光效
-│   │   │   ├── TankUnit.tsx   # 战车实体、独立旋转炮塔与开火后坐
-│   │   │   └── Environment.tsx# 星空、环形山与战区雾效光照
+│   │   │   ├── GameBoard3D.tsx # 棋盘、连续移动、炮弹、粒子与损伤
+│   │   │   ├── UnitModels.tsx  # 原创履带重炮、骨骼四足炮台
+│   │   │   ├── DeckPlatform.tsx # 金属甲板、护栏、铆钉与面板
+│   │   │   ├── ThemeEnvironment.tsx # 月面、基地巨炮、行星与轨道环
+│   │   │   └── industrial-materials.ts # 共享磨损/烟尘/损伤纹理
 │   │   └── TacticalGame.tsx   # 游戏主流程、状态控制器与移动端 HUD
 │   └── game/                  # 纯函数规则与决策引擎
 │       ├── ai.ts              # Minimax 决策算法与启发式评估函数
@@ -112,11 +116,11 @@ tank-tactics-3d/
 │       ├── themes.ts          # 月背 / 熔炉 / 冰环三大战区视觉定义
 │       ├── audio.ts           # Web Audio 合成火炮轰鸣与机械步进音效
 │       └── use-game-controller.ts # 游戏状态机与输入锁
-├── public/                    # 本地独立托管轻量 GLB 模型（CC0 协议，无需外链 CDN）
+├── public/                    # 图标与保留的旧版 CC0 GLB 资产
 ├── PLAN.md                    # 项目设计蓝图与里程碑
 ├── RULES.md                   # 规则规格定义与边界用例
 ├── TASKS.md                   # 功能拆解与自动化测试覆盖清单
-├── ASSET_LICENSES.md          # 视觉模型 CC0 1.0 许可声明
+├── ASSET_LICENSES.md          # 原创资产与旧版第三方模型许可记录
 ├── package.json               # 依赖项配置
 └── vite.pages.config.ts       # GitHub Pages 专属打包管线
 ```
@@ -134,7 +138,7 @@ npm install
 # 2. 启动本地全功能开发服务器
 npm run dev
 
-# 3. 执行 Vitest 规则引擎 18 项自动化测试
+# 3. 执行 Vitest 规则、AI、音效共 22 项自动化测试
 npm test
 
 # 4. 执行 TypeScript 严格类型检查
@@ -152,5 +156,5 @@ npm run preview:pages
 ## 📜 开源协议与致谢
 
 - 游戏玩法规则基于 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)（MIT License）。
-- 履带主战坦克与自行火炮使用随站点打包的轻量本地 GLB 模型，详细来源遵循 CC0 1.0 协议，参见 [`ASSET_LICENSES.md`](ASSET_LICENSES.md)。
+- 当前主场景的模型、磨损材质、粒子纹理与音效为代码生成的原创资产。旧版 CC0 GLB 保留但不用于当前单位，来源见 [`ASSET_LICENSES.md`](ASSET_LICENSES.md)。
 - 本项目整体遵循 [MIT License](LICENSE) 开源。

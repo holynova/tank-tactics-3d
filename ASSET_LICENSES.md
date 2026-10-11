@@ -1,4 +1,6 @@
-# Third-party visual assets
+# Asset provenance
+
+Current scene geometry (tracked artillery, articulated four-leg artillery, deck, fortress and terrain), procedural surface/particle/damage textures, and synthesized Web Audio effects are original project code under the project's MIT license. No external model or audio service is used by the current scene. The following older CC0 GLBs remain in the repository but are not used by the rebuilt units.
 
 The two GLB files below are bundled locally under `public/models/`; the game does not load them from a third-party CDN at runtime. The source pages identify each model as CC0 1.0 and disclose AI-assisted generation. This provenance is recorded for transparency; listing the creator does not imply endorsement.
 

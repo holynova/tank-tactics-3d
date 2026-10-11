@@ -2,21 +2,23 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Minus, Plus, RotateCcw } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Crosshair, Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { CombatFx } from "../../game/use-game-controller";
 import type { Piece, Position, ThemeId } from "../../game/types";
 import { THEMES } from "../../game/themes";
-import { GameUnit } from "./UnitModels";
+import { GameUnit, type UnitMotionState } from "./UnitModels";
 import { ThemeEnvironment } from "./ThemeEnvironment";
+import { getDamageTexture, getParticleTexture, getSurfaceTextures } from "./industrial-materials";
+import { DECK_TILE, DeckPlatform } from "./DeckPlatform";
+import { AIM_SECONDS, BURST_SECONDS, MOVE_TRAVEL_SECONDS, MOVE_TURN_SECONDS, PROJECTILE_SECONDS } from "../../game/animation";
 
 const CELL_GAP = 1.42;
-const PROJECTILE_SECONDS = 0.72;
 
 function worldPosition(position: Position): [number, number, number] {
-  return [(position.col - 1.5) * CELL_GAP, 0.22, (position.row - 1.5) * CELL_GAP];
+  return [(position.col - 1.5) * CELL_GAP, .085, (position.row - 1.5) * CELL_GAP];
 }
 
 function AnimatedUnit({
@@ -39,6 +41,16 @@ function AnimatedUnit({
   const group = useRef<THREE.Group>(null);
   const target = useMemo(() => new THREE.Vector3(...worldPosition(piece)), [piece]);
   const targetRotation = THREE.MathUtils.degToRad(180 - piece.facing);
+  const [origin] = useState(() => ({
+    position: new THREE.Vector3(...worldPosition(piece)),
+    rotation: [0, targetRotation, 0] as [number, number, number],
+  }));
+  const motion = useRef<UnitMotionState>({moving:false,turning:false,phase:0,travel:0,turn:targetRotation});
+  const journey = useRef({
+    key: `${piece.row}/${piece.col}/${piece.facing}`, start:0, active:false,
+    from:origin.position.clone(), yaw:targetRotation, yawDelta:0, distance:0, travelled:0,
+  });
+  const reduced = useMemo(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const aimAngle = useMemo(() => {
     if (!aimTarget) return 0;
     const [fromX, , fromZ] = worldPosition(piece);
@@ -46,22 +58,51 @@ function AnimatedUnit({
     return Math.atan2(toX - fromX, toZ - fromZ) - targetRotation;
   }, [aimTarget, piece, targetRotation]);
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }) => {
     if (!group.current) return;
-    group.current.position.lerp(target, 1 - Math.exp(-delta * 9));
-    group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, targetRotation, 10, delta);
+    const key = `${piece.row}/${piece.col}/${piece.facing}`;
+    const j = journey.current;
+    if(j.key !== key) {
+      j.key=key; j.start=clock.elapsedTime; j.active=true;
+      j.from.copy(group.current.position); j.yaw=group.current.rotation.y;
+      j.yawDelta=Math.atan2(Math.sin(targetRotation-j.yaw),Math.cos(targetRotation-j.yaw));
+      j.distance=j.from.distanceTo(target);
+    }
+    if(!j.active)return;
+    const elapsed=clock.elapsedTime-j.start;
+    const turnSeconds=reduced ? .08 : MOVE_TURN_SECONDS;
+    const travelSeconds=reduced ? .18 : MOVE_TRAVEL_SECONDS;
+    const turn=THREE.MathUtils.clamp(elapsed/turnSeconds,0,1);
+    const progress=THREE.MathUtils.clamp((elapsed-turnSeconds)/travelSeconds,0,1);
+    const eased=progress*progress*(3-2*progress);
+    group.current.rotation.y=j.yaw+j.yawDelta*turn*turn*(3-2*turn);
+    group.current.position.copy(j.from).lerp(target,eased);
+    const moving=progress>0&&progress<1;
+    const walker=Number(piece.id.split("-").at(-1))%2===1;
+    if(moving&&!reduced)group.current.position.y+=Math.sin(progress*Math.PI)*Math.sin(progress*Math.PI*(walker?6:8))*(walker ? .035 : .009);
+    motion.current.moving=moving&&!reduced;
+    motion.current.turning=!reduced&&turn<1&&Math.abs(j.yawDelta)>.05;
+    motion.current.phase=progress;
+    motion.current.travel=j.travelled+j.distance*eased;
+    motion.current.turn=group.current.rotation.y;
+    if(progress>=1){j.active=false;j.travelled=motion.current.travel;}
   });
 
   return (
     <group
       ref={group}
-      position={target}
-      rotation={[0, targetRotation, 0]}
-      onPointerDown={(event) => {
+      position={origin.position}
+      rotation={origin.rotation}
+      onClick={(event) => {
         event.stopPropagation();
-        if (!disabled) onPress({ row: piece.row, col: piece.col });
+        if (!disabled && event.delta < 6) onPress({ row: piece.row, col: piece.col });
       }}
     >
+      {/* Body-sized picking proxy keeps decorative long barrels from blocking adjacent empty cells. */}
+      <mesh position={[0,.38,0]}>
+        <boxGeometry args={[1.1,.8,1.1]}/>
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false}/>
+      </mesh>
       <GameUnit
         themeId={themeId}
         color={piece.color}
@@ -70,9 +111,34 @@ function AnimatedUnit({
         variant={Number(piece.id.split("-").at(-1)) || 0}
         aimAngle={aimAngle}
         firing={firing}
+        motion={motion}
       />
+      <MovementDust motion={motion} />
     </group>
   );
+}
+
+function MovementDust({ motion }: { motion: React.RefObject<UnitMotionState> }) {
+  const root=useRef<THREE.Group>(null);
+  const puffs=useRef<Array<THREE.Sprite|null>>([]);
+  const map=useMemo(()=>getParticleTexture("smoke"),[]);
+  useFrame(({clock})=>{
+    if(!root.current)return;
+    const state=motion.current;
+    root.current.visible=state.moving;
+    puffs.current.forEach((sprite,i)=>{
+      if(!sprite)return;
+      const age=(clock.elapsedTime*2.5+i*.31)%1;
+      sprite.position.set((i%2?1:-1)*(.35+age*.12),.03+age*.12,-.48-age*.4);
+      sprite.scale.setScalar(.26+age*.5);
+      sprite.material.opacity=.22*(1-age)*Math.sin(state.phase*Math.PI);
+    });
+  });
+  return <group ref={root} visible={false}>
+    {Array.from({length:4},(_,i)=><sprite key={i} ref={sprite=>{puffs.current[i]=sprite;}} raycast={()=>undefined}>
+      <spriteMaterial map={map} color="#b0a58e" transparent opacity={0} depthWrite={false}/>
+    </sprite>)}
+  </group>;
 }
 
 function Cell({
@@ -81,6 +147,7 @@ function Cell({
   valid,
   selected,
   last,
+  scar,
   disabled,
   onPress,
 }: {
@@ -89,13 +156,16 @@ function Cell({
   valid: boolean;
   selected: boolean;
   last: boolean;
+  scar: boolean;
   disabled: boolean;
   onPress: (position: Position) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const theme = THEMES[themeId];
+  const deck = useMemo(() => getSurfaceTextures("deck"), []);
+  const burn = useMemo(() => getDamageTexture(), []);
   const [x, , z] = worldPosition(position);
-  const raised = valid || selected ? 0.08 : 0;
+  const raised = 0;
 
   return (
     <group position={[x, raised, z]}>
@@ -106,20 +176,27 @@ function Cell({
           setHovered(true);
         }}
         onPointerLeave={() => setHovered(false)}
-        onPointerDown={(event) => {
+        geometry={DECK_TILE}
+        dispose={null}
+        onClick={(event) => {
           event.stopPropagation();
-          if (!disabled) onPress(position);
+          if (!disabled && event.delta < 6) onPress(position);
         }}
       >
-        <boxGeometry args={[1.24, 0.18, 1.24]} />
         <meshStandardMaterial
-          color={valid ? theme.accent : theme.cell}
+          {...deck}
+          color={valid ? "#c6a267" : scar ? "#747267" : "#a6a69b"}
           emissive={valid ? theme.accent : last ? theme.blue : "#000000"}
           emissiveIntensity={valid ? (hovered ? 0.72 : 0.36) : last ? 0.18 : 0}
-          roughness={themeId === "lunar" ? 0.46 : 0.72}
-          metalness={themeId === "lunar" ? 0.58 : 0.24}
+          roughness={0.77}
+          metalness={0.55}
+          bumpScale={0.023}
         />
       </mesh>
+      {scar&&<mesh position={[0,.096,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>undefined}>
+        <planeGeometry args={[1.22,1.22]}/>
+        <meshStandardMaterial map={burn} bumpMap={burn} bumpScale={.026} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-2} roughness={.99} metalness={.1}/>
+      </mesh>}
       <mesh position={[0, -0.015, 0]}>
         <boxGeometry args={[1.13, 0.015, 1.13]} />
         <meshStandardMaterial color="#141d29" roughness={0.7} metalness={0.48} />
@@ -212,14 +289,21 @@ function CannonShell({ shot, reducedMotion }: { shot: Shot; reducedMotion: boole
 
 function MuzzleFlash({ shot }: { shot: Shot }) {
   const flare = useRef<THREE.Mesh>(null);
+  const halo = useRef<THREE.Sprite>(null);
+  const light = useRef<THREE.PointLight>(null);
+  const map = useMemo(()=>getParticleTexture("glow"),[]);
   const startedAt = useRef<number | null>(null);
   useFrame(({ clock }) => {
     if (startedAt.current === null) startedAt.current = clock.elapsedTime;
     if (!flare.current) return;
-    const progress = Math.max(0, (clock.elapsedTime - startedAt.current - shot.delay) / 0.18);
-    flare.current.visible = progress < 1;
+    const elapsed = clock.elapsedTime - startedAt.current - shot.delay;
+    const progress = Math.max(0, elapsed / .18);
+    const visible = elapsed >= 0 && progress < 1;
+    flare.current.visible = visible;
     flare.current.scale.setScalar(0.48 + Math.min(progress, 1) * 1.3);
     (flare.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - progress);
+    if(halo.current){halo.current.visible=visible;halo.current.scale.setScalar(.65+progress*.7);halo.current.material.opacity=Math.max(0,1-progress)*.8;}
+    if(light.current)light.current.intensity=visible?12*(1-progress):0;
   });
   const direction = shot.to.clone().sub(shot.from);
   const angle = Math.atan2(direction.x, direction.z);
@@ -231,7 +315,8 @@ function MuzzleFlash({ shot }: { shot: Shot }) {
         <coneGeometry args={[0.16, 0.42, 9]} />
         <meshBasicMaterial color="#ffcf7a" transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </mesh>
-      <pointLight color="#ff8a39" intensity={5} distance={1.9} decay={2} />
+      <sprite ref={halo}><spriteMaterial map={map} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false}/></sprite>
+      <pointLight ref={light} color="#ffb469" intensity={0} distance={2.8} decay={2} />
     </group>
   );
 }
@@ -250,11 +335,14 @@ function Explosion({ position, color, reducedMotion }: {
 }) {
   const shards = useRef<THREE.InstancedMesh>(null);
   const ring = useRef<THREE.Mesh>(null);
-  const flash = useRef<THREE.Mesh>(null);
-  const smoke = useRef<Array<THREE.Mesh | null>>([]);
+  const flash = useRef<THREE.Sprite>(null);
+  const boomLight = useRef<THREE.PointLight>(null);
+  const smoke = useRef<Array<THREE.Sprite | null>>([]);
+  const smokeMap = useMemo(() => getParticleTexture("smoke"), []);
+  const glowMap = useMemo(() => getParticleTexture("glow"), []);
   const startedAt = useRef<number | null>(null);
   const mobile = useThree((state) => state.size.width < 620);
-  const count = reducedMotion ? 8 : mobile ? 30 : 44;
+  const count = reducedMotion ? 8 : mobile ? 64 : 96;
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const center = useMemo(() => new THREE.Vector3(...position), [position]);
   const particles = useMemo<Particle[]>(() => Array.from({ length: count }, (_, index) => {
@@ -267,21 +355,25 @@ function Explosion({ position, color, reducedMotion }: {
       color: new THREE.Color(index % 7 === 0 ? "#fff1b3" : index % 3 === 0 ? "#ff6b35" : color),
     };
   }), [color, count]);
+  useEffect(()=>{
+    particles.forEach((particle,index)=>shards.current?.setColorAt(index,particle.color));
+    if(shards.current?.instanceColor)shards.current.instanceColor.needsUpdate=true;
+  },[particles]);
 
   useFrame(({ clock }) => {
     if (startedAt.current === null) startedAt.current = clock.elapsedTime;
-    const t = Math.min(1, (clock.elapsedTime - startedAt.current) / (reducedMotion ? 0.42 : 0.88));
+    const t = Math.min(1, (clock.elapsedTime - startedAt.current) / (reducedMotion ? 0.42 : BURST_SECONDS));
+    if(boomLight.current)boomLight.current.intensity=18*Math.exp(-t*8);
     if (ring.current) {
       ring.current.scale.setScalar(1 + t * 5.5);
       (ring.current.material as THREE.MeshBasicMaterial).opacity = 0.92 * (1 - t);
     }
     if (flash.current) {
-      const size = 0.18 + Math.sin(Math.min(1, t * 3) * Math.PI) * 0.5 + t * 0.8;
+      const size = .8 + Math.sin(Math.min(1, t * 3) * Math.PI) * 1.6 + t * 1.2;
       flash.current.scale.setScalar(size);
-      (flash.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - t * 4.8);
+      flash.current.material.opacity = Math.max(0, 1 - t * 3.8);
     }
     if (shards.current) {
-      const alive = 1 - t;
       particles.forEach((particle, index) => {
         dummy.position.copy(center).addScaledVector(particle.velocity, t * (reducedMotion ? 0.55 : 1.1));
         dummy.position.y -= t * t * 1.35;
@@ -294,10 +386,9 @@ function Explosion({ position, color, reducedMotion }: {
         dummy.scale.set(size * (1 + (index % 4) * 0.4), size, size * (1 + (index % 5) * 0.24));
         dummy.updateMatrix();
         shards.current!.setMatrixAt(index, dummy.matrix);
-        shards.current!.setColorAt(index, particle.color.clone().multiplyScalar(alive));
       });
       shards.current.instanceMatrix.needsUpdate = true;
-      if (shards.current.instanceColor) shards.current.instanceColor.needsUpdate = true;
+      (shards.current.material as THREE.MeshBasicMaterial).opacity=1-t;
     }
     smoke.current.forEach((puff, index) => {
       if (!puff) return;
@@ -307,20 +398,17 @@ function Explosion({ position, color, reducedMotion }: {
         position[1] + 0.08 + t * (0.48 + index % 3 * 0.08),
         position[2] + Math.sin(angle) * (0.14 + t * 0.34),
       );
-      const scale = (0.14 + t * 0.36) * (1 + (index % 2) * 0.22);
+      const scale = (.48 + t * 1.25) * (1 + (index % 2) * .22);
       puff.scale.set(scale, scale * 0.78, scale);
-      const material = puff.material as THREE.MeshBasicMaterial;
-      material.opacity = (reducedMotion ? 0.17 : 0.26) * (1 - t);
+      puff.material.opacity = (reducedMotion ? .25 : .65) * (1 - t);
+      puff.material.rotation = index * .73 + t * .3;
     });
   });
 
   return (
     <group>
-      <mesh ref={flash} position={position}>
-        <sphereGeometry args={[0.42, 14, 10]} />
-        <meshBasicMaterial color="#fff2b7" transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-      </mesh>
-      <mesh ref={ring} position={[position[0], 0.27, position[2]]} rotation={[-Math.PI / 2, 0, 0]}>
+      <sprite ref={flash} position={position}><spriteMaterial map={glowMap} transparent opacity={.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false}/></sprite>
+      <mesh ref={ring} position={[position[0], .106, position[2]]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.17, 0.3, 40]} />
         <meshBasicMaterial color={color} transparent opacity={0.96} depthWrite={false} toneMapped={false} />
       </mesh>
@@ -329,14 +417,35 @@ function Explosion({ position, color, reducedMotion }: {
         <meshBasicMaterial color="#ffffff" vertexColors transparent opacity={1} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </instancedMesh>
       {Array.from({ length: 5 }, (_, index) => (
-        <mesh key={index} ref={(mesh) => { smoke.current[index] = mesh; }} position={position}>
-          <sphereGeometry args={[1, 8, 6]} />
-          <meshBasicMaterial color="#584c46" transparent opacity={0.24} depthWrite={false} />
-        </mesh>
+        <sprite key={index} ref={(sprite) => { smoke.current[index] = sprite; }} position={position}>
+          <spriteMaterial map={smokeMap} color="#847c6a" transparent opacity={.6} depthWrite={false}/>
+        </sprite>
       ))}
-      <pointLight position={[position[0], position[1] + 0.3, position[2]]} color={color} intensity={6} distance={3.4} decay={2} />
+      <pointLight ref={boomLight} position={[position[0], position[1] + 0.3, position[2]]} color="#ffc37b" intensity={18} distance={4.2} decay={2} />
     </group>
   );
+}
+
+function DamageDebris({scars}:{scars:Position[]}) {
+  const chunks=useRef<THREE.InstancedMesh>(null);
+  useEffect(()=>{
+    const dummy=new THREE.Object3D();
+    scars.forEach((scar,scarIndex)=>{
+      const [x,,z]=worldPosition(scar);
+      for(let i=0;i<6;i++){
+        const angle=i*2.399+scarIndex, radius=.24+(i%3)*.075;
+        dummy.position.set(x+Math.cos(angle)*radius,.12,z+Math.sin(angle)*radius);
+        dummy.rotation.set(i*.41,angle,i*.26);
+        dummy.scale.set(.045+(i%2)*.025,.025,.065);
+        dummy.updateMatrix();chunks.current?.setMatrixAt(scarIndex*6+i,dummy.matrix);
+      }
+    });
+    if(chunks.current)chunks.current.instanceMatrix.needsUpdate=true;
+  },[scars]);
+  if(!scars.length)return null;
+  return <instancedMesh ref={chunks} args={[undefined,undefined,scars.length*6]} raycast={()=>undefined} receiveShadow>
+    <dodecahedronGeometry args={[1,0]}/><meshStandardMaterial color="#49483e" metalness={.66} roughness={.79}/>
+  </instancedMesh>;
 }
 
 function AttackEffects({ pieces, fx, themeId, reducedMotion }: {
@@ -356,17 +465,18 @@ function AttackEffects({ pieces, fx, themeId, reducedMotion }: {
     return firingPair.map((attacker, shooterIndex) => {
       const from = new THREE.Vector3(...worldPosition(attacker));
       const to = new THREE.Vector3(...worldPosition(victim));
-      from.y = 0.92;
-      to.y = 0.52;
+      const walker = Number(attacker.id.split("-").at(-1)) % 2 === 1;
+      from.y = walker ? .89 : .7;
+      to.y = .48;
       const heading = to.clone().sub(from);
       const direction = heading.clone().setY(0).normalize();
-      from.addScaledVector(direction, 0.44);
+      from.addScaledVector(direction, walker ? .85 : 1.15);
       return {
         id: `${attacker.id}-${victim.id}`,
         from,
         to,
         accent: attacker.color === "red" ? theme.red : theme.blue,
-        delay: victimIndex * 0.12 + shooterIndex * 0.045,
+        delay: AIM_SECONDS + victimIndex * .12 + shooterIndex * .045,
       } satisfies Shot;
     });
   });
@@ -398,6 +508,7 @@ export interface CameraCommands {
 
 interface GameBoard3DProps {
   pieces: Piece[];
+  scars?: Position[];
   selectedId: string | null;
   validMoves: Position[];
   themeId: ThemeId;
@@ -405,10 +516,45 @@ interface GameBoard3DProps {
   fx: CombatFx;
   disabled: boolean;
   onCellPress: (position: Position) => void;
+  cameraEnabled?: boolean;
+}
+
+function CameraRig({ controls }: { controls: React.RefObject<OrbitControlsImpl | null> }) {
+  const camera = useThree(state => state.camera);
+  const mobile = useThree(state => state.size.width < 620);
+  useEffect(() => {
+    camera.position.set(...(mobile ? [0, 14.6, 11.7] : [7.5, 12.5, 12.5]) as [number, number, number]);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = mobile ? 46 : 38;
+      camera.updateProjectionMatrix();
+    }
+    controls.current?.target.set(0, 0, mobile ? .5 : -.5);
+    controls.current?.update();
+    controls.current?.saveState();
+  }, [camera, mobile, controls]);
+  return null;
+}
+
+function RenderProbe() {
+  const last = useRef(0);
+  const frames = useRef(0);
+  useFrame(({ gl, clock }) => {
+    frames.current++;
+    if (clock.elapsedTime - last.current < 1) return;
+    const elapsed = clock.elapsedTime - last.current;
+    last.current = clock.elapsedTime;
+    gl.domElement.dataset.drawCalls = String(gl.info.render.calls);
+    gl.domElement.dataset.triangles = String(gl.info.render.triangles);
+    gl.domElement.dataset.textureCount = String(gl.info.memory.textures);
+    gl.domElement.dataset.fps = String(Math.round(frames.current / elapsed));
+    frames.current = 0;
+  });
+  return null;
 }
 
 export function GameBoard3D({
   pieces,
+  scars = [],
   selectedId,
   validMoves,
   themeId,
@@ -416,6 +562,7 @@ export function GameBoard3D({
   fx,
   disabled,
   onCellPress,
+  cameraEnabled = true,
 }: GameBoard3DProps) {
   const theme = THEMES[themeId];
   const controls = useRef<OrbitControlsImpl>(null);
@@ -439,50 +586,45 @@ export function GameBoard3D({
     <div className="game-board-layer">
       <Canvas
         className="game-canvas"
-        dpr={[1, 1.45]}
+        dpr={[1, 1.6]}
+        shadows
         camera={{
-          position: mobileLayout ? [0, 10.4, 8.2] : [7.4, 10.8, 8.6],
-          fov: mobileLayout ? 54 : 36,
+          position: mobileLayout ? [0, 14.6, 11.7] : [7.5, 12.5, 12.5],
+          fov: mobileLayout ? 46 : 38,
           near: 0.1,
-          far: 80,
+          far: 180,
         }}
         gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
+        onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.05; }}
+        fallback={<div className="webgl-fallback">请使用支持 WebGL 的浏览器打开战术沙盘。</div>}
         onPointerMissed={() => undefined}
         style={{ background: theme.background }}
       >
         <OrbitControls
           ref={controls}
+          enabled={cameraEnabled}
           makeDefault
           enableDamping
           dampingFactor={0.085}
           enablePan
           enableRotate
           enableZoom
-          minDistance={8.2}
-          maxDistance={18}
+          minDistance={10}
+          maxDistance={26}
           minPolarAngle={0.24}
           maxPolarAngle={1.37}
-          target={[0, 0.05, 0]}
+          target={[0, 0, mobileLayout ? .5 : -.5]}
           zoomSpeed={0.72}
           rotateSpeed={0.72}
           panSpeed={0.65}
         />
+        <CameraRig controls={controls} />
+        <RenderProbe />
         <color attach="background" args={[theme.background]} />
         <ThemeEnvironment themeId={themeId} />
 
         <group>
-          <mesh position={[0, -0.2, 0]} receiveShadow castShadow>
-            <boxGeometry args={[6.45, 0.38, 6.45]} />
-            <meshStandardMaterial color={theme.board} roughness={0.62} metalness={0.48} />
-          </mesh>
-          <mesh position={[0, -0.405, 0]}>
-            <boxGeometry args={[6.22, 0.065, 6.22]} />
-            <meshStandardMaterial color="#111824" roughness={0.4} metalness={0.82} />
-          </mesh>
-          <mesh position={[0, -0.12, 0]}>
-            <boxGeometry args={[5.95, 0.045, 5.95]} />
-            <meshStandardMaterial color="#101720" roughness={0.64} metalness={0.52} />
-          </mesh>
+          <DeckPlatform />
 
           {Array.from({ length: 4 }, (_, row) =>
             Array.from({ length: 4 }, (_, col) => {
@@ -496,6 +638,7 @@ export function GameBoard3D({
                   valid={validMoves.some((move) => move.row === row && move.col === col)}
                   selected={piece?.id === selectedId}
                   last={lastMove?.row === row && lastMove?.col === col}
+                  scar={scars.some(scar=>scar.row===row&&scar.col===col)}
                   disabled={disabled}
                   onPress={onCellPress}
                 />
@@ -522,18 +665,22 @@ export function GameBoard3D({
             );
           })}
           <AttackEffects pieces={pieces} fx={fx} themeId={themeId} reducedMotion={reducedMotion} />
+          <DamageDebris scars={scars}/>
         </group>
       </Canvas>
 
       <div className="camera-controls-rail" role="group" aria-label="战场视角">
+        <button type="button" aria-label="重置战场视角" title="重置视角" onClick={() => controls.current?.reset()}>
+          <RotateCcw aria-hidden="true" />
+        </button>
         <button type="button" aria-label="放大视角" title="放大" onPointerDown={(event) => event.stopPropagation()} onClick={() => zoom(true)}>
           <Plus aria-hidden="true" />
         </button>
         <button type="button" aria-label="缩小视角" title="缩小" onPointerDown={(event) => event.stopPropagation()} onClick={() => zoom(false)}>
           <Minus aria-hidden="true" />
         </button>
-        <button type="button" aria-label="重置战场视角" title="重置视角" onPointerDown={(event) => event.stopPropagation()} onClick={() => controls.current?.reset()}>
-          <RotateCcw aria-hidden="true" />
+        <button type="button" aria-label="聚焦棋盘" title="聚焦棋盘" onClick={() => { controls.current?.target.set(0,0,0); controls.current?.update(); }}>
+          <Crosshair aria-hidden="true" />
         </button>
       </div>
     </div>

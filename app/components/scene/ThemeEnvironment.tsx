@@ -1,225 +1,157 @@
 "use client";
 
-import { Stars } from "@react-three/drei";
+import { Environment, Lightformer, Stars } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
+import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { ThemeId } from "../../game/types";
-import { THEMES } from "../../game/themes";
+import { getMarkTexture, getSurfaceTextures } from "./industrial-materials";
+import { FortressStructure as Building } from "./FortressStructures";
 
-export interface ThemeEnvironmentProps {
-  themeId: ThemeId;
+export interface ThemeEnvironmentProps { themeId: ThemeId }
+
+function terrainGeometry() {
+  const g = new THREE.PlaneGeometry(38, 24, 90, 70);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0,0,4);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x=p.getX(i),z=p.getZ(i), distance=Math.hypot(x,z);
+    const noise=Math.sin(x*.81+Math.cos(z*.74))*Math.cos(z*.61)+Math.sin(x*2.31+z*1.61)*.18;
+    const hills=Math.max(0,Math.min(1,(distance-5)/7));
+    let elevation=-.72+hills*(noise*.6+Math.sin(x*.2-z*.27)*.65);
+    for(const [cx,cz,r] of [[-5,-3,1.4],[5,-4,.8],[-4.5,1.5,.7],[5,2.5,1.3],[-1,-6,1.1],[4,7,1.1]]){
+      const d=Math.hypot(x-cx,z-cz)/r;
+      elevation+=-.36*Math.exp(-d*d*2)+.14*Math.exp(-(d-1)*(d-1)*12);
+    }
+    p.setY(i,elevation);
+  }
+  const uv=g.attributes.uv;
+  for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*9,uv.getY(i)*6);
+  g.computeVertexNormals(); return g;
+}
+function rubbleGeometry() {
+  const parts:THREE.BufferGeometry[]=[];
+  for(let i=0;i<210;i++){
+    const a=i*2.399963,r=5.4+(i*17%220)/10;
+    const size=.07+(i*31%100)/210;
+    const p=new THREE.Vector3(Math.cos(a)*r,-.52,Math.sin(a)*r);
+    if(p.z < -7 || Math.abs(p.x)>18)continue;
+    const g=new THREE.DodecahedronGeometry(size,0).toNonIndexed();
+    g.applyMatrix4(new THREE.Matrix4().compose(p,new THREE.Quaternion().setFromEuler(new THREE.Euler(a,a*.34,a*.12)),new THREE.Vector3(1.3,.7,1)));
+    parts.push(g);
+  }
+  const result=mergeGeometries(parts)!;parts.forEach(g=>g.dispose());return result;
 }
 
-function LunarEnvironment() {
-  return (
-    <group>
-      <mesh position={[-4.65, -0.405, -3.55]} rotation={[-Math.PI / 2, 0.18, 0]}>
-        <ringGeometry args={[0.58, 0.83, 28]} />
-        <meshStandardMaterial color="#303847" roughness={0.98} metalness={0.04} />
-      </mesh>
-      <mesh position={[4.65, -0.405, 3.75]} rotation={[-Math.PI / 2, -0.3, 0]}>
-        <ringGeometry args={[0.46, 0.67, 24]} />
-        <meshStandardMaterial color="#252f3d" roughness={1} />
-      </mesh>
-      <mesh position={[-4.62, -0.32, -3.52]} rotation={[0.12, 0.1, -0.14]}>
-        <dodecahedronGeometry args={[0.8, 1]} />
-        <meshStandardMaterial color="#384353" roughness={0.96} />
-      </mesh>
-      <mesh position={[4.52, -0.28, 3.68]} rotation={[-0.12, -0.4, 0.18]}>
-        <icosahedronGeometry args={[0.72, 1]} />
-        <meshStandardMaterial color="#3b4759" roughness={0.96} />
-      </mesh>
-
-      {/* Raised trench walls bracket the battery without taking up board cells. */}
-      {[-1, 1].map((side) => (
-        <group key={side} position={[side * 3.82, -0.02, 0]}>
-          <mesh position={[0, 0.12, 0]} castShadow>
-            <boxGeometry args={[0.25, 0.58, 6.7]} />
-            <meshStandardMaterial color="#38404e" roughness={0.85} metalness={0.34} />
-          </mesh>
-          <mesh position={[-side * 0.045, 0.43, 0]}>
-            <boxGeometry args={[0.3, 0.055, 6.75]} />
-            <meshStandardMaterial color="#8a7561" roughness={0.72} metalness={0.4} />
-          </mesh>
-          <mesh position={[-side * 0.16, 0.04, 0]}>
-            <boxGeometry args={[0.12, 0.12, 6.1]} />
-            <meshBasicMaterial color={side < 0 ? "#ff7548" : "#52c9ef"} toneMapped={false} />
-          </mesh>
-        </group>
-      ))}
-      <group position={[0, 0, -4.85]} rotation={[0.08, 0.12, 0]}>
-        <mesh position={[0, 1.25, 0]}>
-          <cylinderGeometry args={[0.16, 0.3, 2.5, 7]} />
-          <meshStandardMaterial color="#444f61" metalness={0.58} roughness={0.5} />
-        </mesh>
-        <mesh position={[0, 2.55, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.56, 0.035, 7, 24]} />
-          <meshStandardMaterial color="#69788f" metalness={0.72} roughness={0.32} />
-        </mesh>
-        <mesh position={[0.32, 2.55, 0]}>
-          <sphereGeometry args={[0.09, 9, 7]} />
-          <meshBasicMaterial color="#ffbd62" toneMapped={false} />
-        </mesh>
+function FortressGun() {
+  const steel=useMemo(()=>getSurfaceTextures("steel"),[]);
+  const mark=useMemo(()=>getMarkTexture("03"),[]);
+  return <group position={[-4.2,-.5,-5.5]} rotation={[0,-.18,0]}>
+    <Building position={[0,0,0]} scale={1.55} variant={0}/>
+    <mesh position={[0,1.95,0]}><cylinderGeometry args={[.63,.72,.7,18]}/><meshStandardMaterial {...steel} color="#767e77" metalness={.7} roughness={.6}/></mesh>
+    <mesh position={[0,2.4,0]}><cylinderGeometry args={[1.03,1.16,.55,24]}/><meshStandardMaterial {...steel} color="#646865" metalness={.8} roughness={.6} bumpScale={.035}/></mesh>
+    <group position={[0,2.8,0]}>
+      <mesh castShadow rotation={[0,0,-.14]}><boxGeometry args={[2.1,1.18,1.32]}/><meshStandardMaterial {...steel} color="#4c5556" metalness={.78} roughness={.59} bumpScale={.04}/></mesh>
+      <mesh position={[0,0,.675]}><planeGeometry args={[.8,.5]}/><meshStandardMaterial map={mark} transparent alphaTest={.1} roughness={.9}/></mesh>
+      <group position={[1,.12,0]} rotation={[0,0,-Math.PI/2-.1]}>
+        <mesh position={[0,.9,0]}><cylinderGeometry args={[.28,.45,1.8,24]}/><meshStandardMaterial {...steel} color="#5e6260" metalness={.85} roughness={.48} bumpScale={.03}/></mesh>
+        <mesh position={[0,2.35,0]}><cylinderGeometry args={[.22,.28,1.4,24]}/><meshStandardMaterial {...steel} color="#77796e" metalness={.88} roughness={.45}/></mesh>
+        {[.25,.55,1.4,1.75,2.4,2.95].map(y=><mesh key={y} position={[0,y,0]}><cylinderGeometry args={[y<1.5?.39:.3,y<1.5?.39:.3,.11,24]}/><meshStandardMaterial {...steel} color="#353d3f" metalness={.8} roughness={.57}/></mesh>)}
+        <mesh position={[0,3.08,0]}><cylinderGeometry args={[.185,.185,.02,24]}/><meshStandardMaterial color="#0a0d0e" roughness={1}/></mesh>
       </group>
-      <mesh position={[4.9, 1.05, -4.4]} rotation={[0.12, 0, 0.24]}>
-        <coneGeometry args={[0.43, 1.8, 7]} />
-        <meshStandardMaterial color="#333e4f" metalness={0.5} roughness={0.56} />
-      </mesh>
-      <mesh position={[-5.1, 0.75, 4.2]} rotation={[-0.1, 0, -0.18]}>
-        <dodecahedronGeometry args={[0.68, 0]} />
-        <meshStandardMaterial color="#353f50" roughness={0.94} />
-      </mesh>
-      <mesh position={[0, 3.7, -7.3]} rotation={[0.2, 0.05, 0]}>
-        <torusGeometry args={[1.85, 0.032, 6, 52]} />
-        <meshBasicMaterial color="#8e9bb4" transparent opacity={0.35} depthWrite={false} />
-      </mesh>
     </group>
-  );
+    <mesh position={[-.95,4.2,-.4]}><boxGeometry args={[.15,5.4,.2]}/><meshStandardMaterial {...steel} color="#3f4748" metalness={.8} roughness={.6}/></mesh>
+    <mesh position={[-.95,4.3,-.25]}><planeGeometry args={[.8,2.7]}/><meshStandardMaterial color="#814a32" side={THREE.DoubleSide} roughness={1}/></mesh>
+    {Array.from({length:5},(_,i)=><mesh key={i} position={[-.85,1+i*.52,.73]}><boxGeometry args={[.18,.09,.06]}/><meshStandardMaterial emissive="#ffb05b" emissiveIntensity={2} color="#c99a66"/></mesh>)}
+  </group>;
 }
 
-function ForgeEnvironment() {
-  return (
-    <group>
-      {[-1, 1].map((side) => (
-        <group key={side} position={[side * 4.45, 0, side < 0 ? -3.2 : 3.25]} rotation={[0, side * 0.18, side * 0.07]}>
-          <mesh position={[0, 0.76, 0]} castShadow>
-            <boxGeometry args={[0.62, 1.48, 0.68]} />
-            <meshStandardMaterial color="#303e4c" roughness={0.5} metalness={0.7} />
-          </mesh>
-          <mesh position={[0, 1.54, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.37, 0.045, 7, 20]} />
-            <meshStandardMaterial color="#97a5ae" roughness={0.33} metalness={0.84} />
-          </mesh>
-          <mesh position={[0, 0.96, 0.36]}>
-            <boxGeometry args={[0.23, 0.08, 0.025]} />
-            <meshBasicMaterial color={side < 0 ? "#ff865e" : "#64e0f3"} toneMapped={false} />
-          </mesh>
-          <group position={[side * 0.88, 0.95, 0.06]} rotation={[0.25, 0.12, side * -0.12]}>
-            <mesh>
-              <boxGeometry args={[1.65, 0.075, 0.92]} />
-              <meshStandardMaterial color="#4b5c69" roughness={0.52} metalness={0.76} />
-            </mesh>
-            {[-0.7, -0.35, 0, 0.35, 0.7].map((x) => (
-              <mesh key={x} position={[x, 0.055, 0]}>
-                <boxGeometry args={[0.025, 0.018, 0.91]} />
-                <meshBasicMaterial color="#61aac0" toneMapped={false} />
-              </mesh>
-            ))}
-            <mesh position={[side * -0.1, -0.24, 0]}>
-              <cylinderGeometry args={[0.025, 0.04, 0.5, 7]} />
-              <meshStandardMaterial color="#8799a7" metalness={0.82} roughness={0.32} />
-            </mesh>
-          </group>
-        </group>
-      ))}
-      <group position={[0, 4.5, -5.2]} rotation={[0.4, 0, 0.12]}>
-        <mesh>
-          <torusGeometry args={[2.05, 0.055, 7, 56]} />
-          <meshStandardMaterial color="#647787" metalness={0.76} roughness={0.35} />
-        </mesh>
-        <mesh rotation={[0, 0.45, 0]}>
-          <torusGeometry args={[2.12, 0.018, 5, 56]} />
-          <meshBasicMaterial color="#ffbd62" transparent opacity={0.7} depthWrite={false} />
-        </mesh>
-        <mesh position={[1.87, 0, 0]}>
-          <boxGeometry args={[0.54, 0.27, 0.32]} />
-          <meshStandardMaterial color="#394755" metalness={0.78} roughness={0.42} />
-        </mesh>
-      </group>
-      <mesh position={[-5.1, 0.28, 4.5]} rotation={[0.36, 0.4, -0.7]}>
-        <boxGeometry args={[1.25, 0.16, 0.42]} />
-        <meshStandardMaterial color="#465764" metalness={0.8} roughness={0.52} />
-      </mesh>
-      <mesh position={[5.15, 0.42, -4.25]} rotation={[-0.34, -0.24, 0.4]}>
-        <boxGeometry args={[1.3, 0.18, 0.56]} />
-        <meshStandardMaterial color="#41505c" metalness={0.78} roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 3.5, -7.2]} rotation={[Math.PI / 2, 0.2, 0]}>
-        <torusGeometry args={[2.45, 0.04, 7, 52]} />
-        <meshBasicMaterial color="#6f8795" transparent opacity={0.28} depthWrite={false} />
-      </mesh>
+function OrbitalSky({themeId}:{themeId:ThemeId}) {
+  const root=useRef<THREE.Group>(null);
+  const planet=useMemo(()=>getSurfaceTextures("planet"),[]);
+  const steel=useMemo(()=>getSurfaceTextures("steel"),[]);
+  const ribs=useMemo(()=>{
+    const parts=Array.from({length:28},(_,i)=>{
+      const a=i/28*Math.PI*1.58;
+      const g=new THREE.BoxGeometry(.65,.15,.8);
+      g.rotateZ(a);g.translate(Math.cos(a)*9,Math.sin(a)*9,0);return g;
+    });
+    const geometry=mergeGeometries(parts)!;parts.forEach(g=>g.dispose());return geometry;
+  },[]);
+  useFrame(({camera})=>{
+    if(!root.current)return;
+    root.current.position.copy(camera.position);
+    root.current.quaternion.copy(camera.quaternion);
+  });
+  const glow=useMemo(()=>({color:{value:new THREE.Color(themeId==="abyss"?"#a8dfe8":"#bed1e7")}}),[themeId]);
+  const planetUniforms=useMemo(()=>({map:{value:planet.map},tint:{value:new THREE.Color(themeId==="sky"?"#c5b398":"#9eafc7")}}),[planet,themeId]);
+  return <group ref={root}>
+    <mesh position={[11,6,-46]} rotation={[.3,0,.2]}>
+      <sphereGeometry args={[15,48,32]}/>
+      <shaderMaterial uniforms={planetUniforms}
+        vertexShader={"varying vec2 vUv;varying vec3 vN;void main(){vUv=uv;vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}"}
+        fragmentShader={"uniform sampler2D map;uniform vec3 tint;varying vec2 vUv;varying vec3 vN;void main(){float lit=smoothstep(-.25,.75,dot(normalize(vN),normalize(vec3(-.55,.7,.65))));vec3 surface=texture2D(map,vUv).rgb*tint;gl_FragColor=vec4(surface*(.08+lit*1.3),1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}"} />
+    </mesh>
+    <mesh position={[11,6,-46]} scale={1.025}>
+      <sphereGeometry args={[15,48,32]}/>
+      <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} uniforms={glow}
+        vertexShader={"varying vec3 n;varying vec3 v;void main(){vec4 p=modelViewMatrix*vec4(position,1.0);n=normalize(normalMatrix*normal);v=-p.xyz;gl_Position=projectionMatrix*p;}"}
+        fragmentShader={"uniform vec3 color;varying vec3 n;varying vec3 v;void main(){float a=pow(1.0-abs(dot(normalize(n),normalize(v))),3.0);gl_FragColor=vec4(color,a*.65);}"} />
+    </mesh>
+    <group position={[-7,4.5,-25]} rotation={[0,.2,-.12]}>
+      <mesh><torusGeometry args={[9,.34,8,100,Math.PI*1.58]}/><meshStandardMaterial {...steel} color="#8c999c" metalness={.87} roughness={.64} fog={false}/></mesh>
+      <mesh position={[0,0,.12]}><torusGeometry args={[8.6,.075,6,100,Math.PI*1.58]}/><meshStandardMaterial color="#b8bbae" metalness={.8} roughness={.54} fog={false}/></mesh>
+      <mesh geometry={ribs} dispose={null}><meshStandardMaterial {...steel} color="#56676d" metalness={.8} roughness={.64} fog={false}/></mesh>
     </group>
-  );
+  </group>;
 }
 
-function IceRingEnvironment() {
-  const crystals = [
-    [-4.6, -3.45, 0.9, -0.2], [-5.0, -2.5, 1.35, 0.16], [4.65, -3.6, 1.15, 0.2],
-    [5.0, -2.65, 0.9, -0.18], [-4.8, 3.35, 1.25, 0.14], [4.7, 3.6, 1.55, -0.16],
-  ] as const;
-  return (
-    <group>
-      {crystals.map(([x, z, height, lean], index) => (
-        <group key={index} position={[x, 0, z]} rotation={[0, lean, 0]}>
-          <mesh position={[0, height * 0.46, 0]} rotation={[lean * 0.4, 0.2, lean]} castShadow>
-            <coneGeometry args={[0.48 + index % 2 * 0.12, height, 6]} />
-            <meshStandardMaterial color={index % 2 ? "#477181" : "#3b6979"} roughness={0.22} metalness={0.42} transparent opacity={0.86} />
-          </mesh>
-          <mesh position={[0, height * 0.52, 0.04]}>
-            <coneGeometry args={[0.17, height * 0.76, 5]} />
-            <meshBasicMaterial color="#b9f5ff" transparent opacity={0.18} depthWrite={false} toneMapped={false} />
-          </mesh>
-        </group>
-      ))}
-      {[-1, 1].map((side) => (
-        <group key={side} position={[side * 4.5, 0.08, side * 2.7]} rotation={[0, side * 0.22, side * 0.05]}>
-          <mesh position={[0, 0.4, 0]} castShadow>
-            <boxGeometry args={[0.68, 0.8, 0.72]} />
-            <meshStandardMaterial color="#263b48" roughness={0.42} metalness={0.72} />
-          </mesh>
-          <mesh position={[side * -0.34, 0.41, 0]}>
-            <boxGeometry args={[0.06, 0.82, 0.74]} />
-            <meshBasicMaterial color={side < 0 ? "#ff765d" : "#71dcf3"} toneMapped={false} />
-          </mesh>
-          <mesh position={[0, 0.86, 0]} rotation={[0.12, 0, Math.PI / 2]}>
-            <torusGeometry args={[0.25, 0.035, 6, 18]} />
-            <meshStandardMaterial color="#93adb9" metalness={0.72} roughness={0.32} />
-          </mesh>
-        </group>
-      ))}
-      <group position={[0.15, 4.2, -6.1]} rotation={[0.2, 0.1, 0.7]}>
-        <mesh>
-          <torusGeometry args={[1.9, 0.045, 7, 48]} />
-          <meshStandardMaterial color="#547483" metalness={0.62} roughness={0.32} />
-        </mesh>
-        <mesh rotation={[0, 0, 0.5]}>
-          <torusGeometry args={[1.96, 0.016, 5, 48]} />
-          <meshBasicMaterial color="#94e8f5" transparent opacity={0.6} depthWrite={false} />
-        </mesh>
-      </group>
-      <mesh position={[-5.3, 0.42, 4.2]} rotation={[0.4, -0.1, 0.7]}>
-        <dodecahedronGeometry args={[0.6, 0]} />
-        <meshStandardMaterial color="#283f4c" roughness={0.58} metalness={0.42} />
-      </mesh>
-      <mesh position={[5.1, 0.32, -4.6]} rotation={[-0.2, 0.2, 0.46]}>
-        <icosahedronGeometry args={[0.65, 0]} />
-        <meshStandardMaterial color="#304b59" roughness={0.55} metalness={0.46} />
-      </mesh>
-    </group>
-  );
+function ForegroundHardware() {
+  const steel=useMemo(()=>getSurfaceTextures("steel"),[]);
+  const hazard=useMemo(()=>getSurfaceTextures("hazard"),[]);
+  return <group>
+    <mesh position={[0,-.3,4.7]} rotation={[.2,0,0]}><boxGeometry args={[2.2,.2,1.2]}/><meshStandardMaterial {...steel} color="#545b58" metalness={.77} roughness={.66}/></mesh>
+    <mesh position={[0,-.08,4.7]} rotation={[-Math.PI/2+.2,0,0]}><planeGeometry args={[1.8,.78]}/><meshStandardMaterial color="#101b1f" metalness={.55} roughness={.8}/></mesh>
+    <mesh position={[0,-.03,5.17]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[1.8,.12]}/><meshStandardMaterial {...hazard} color="#b3a081" metalness={.55} roughness={.8}/></mesh>
+    {Array.from({length:9},(_,i)=><mesh key={i} position={[-.72+i*.18,-.035,4.7]} rotation={[.2,0,0]}><boxGeometry args={[.025,.025,.68]}/><meshStandardMaterial color="#6d7974" metalness={.8} roughness={.65}/></mesh>)}
+    {[-1,1].map(side=><group key={side} position={[side*3.3,-.35,4.7]} rotation={[.12,0,side*.16]}>
+      <mesh position={[0,.53,0]}><cylinderGeometry args={[.24,.3,1.05,18]}/><meshStandardMaterial {...steel} color="#817759" metalness={.78} roughness={.63}/></mesh>
+      <mesh position={[0,1.22,0]}><coneGeometry args={[.24,.43,18]}/><meshStandardMaterial {...steel} color="#afb19f" metalness={.87} roughness={.38}/></mesh>
+      <mesh position={[0,.09,0]}><cylinderGeometry args={[.32,.32,.14,18]}/><meshStandardMaterial color="#b69c60" metalness={.8} roughness={.45}/></mesh>
+    </group>)}
+    <mesh position={[1.8,-.35,4.1]} rotation={[Math.PI/2,0,.2]}><torusGeometry args={[.65,.058,8,36,Math.PI*1.65]}/><meshStandardMaterial color="#181d1c" roughness={.92}/></mesh>
+  </group>;
 }
 
-/** A shared, high-angle artillery platform with three locations in the same orbital war. */
-export function ThemeEnvironment({ themeId }: ThemeEnvironmentProps) {
-  const theme = THEMES[themeId];
-
-  return (
-    <>
-      <fog attach="fog" args={[theme.fog, 8, 27]} />
-      <Stars radius={38} depth={15} count={460} factor={2.4} saturation={0.28} fade speed={0.1} />
-      <ambientLight color="#c4d2e4" intensity={1.08} />
-      <hemisphereLight args={["#b1c7db", theme.board, 0.92]} />
-      <directionalLight position={[5, 11, 4]} color="#f0f5ff" intensity={2.1} />
-      <directionalLight position={[-5, 6, -4]} color={theme.accent} intensity={1.1} />
-      <pointLight position={[-4.3, 2.8, -0.6]} color={theme.red} intensity={10} distance={8} decay={2} />
-      <pointLight position={[4.3, 2.6, 0.8]} color={theme.blue} intensity={10} distance={8} decay={2} />
-
-      <mesh position={[0, -0.44, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[28, 28]} />
-        <meshStandardMaterial color={theme.background} roughness={0.93} metalness={0.15} />
-      </mesh>
-
-      {themeId === "lunar" ? <LunarEnvironment /> : null}
-      {themeId === "sky" ? <ForgeEnvironment /> : null}
-      {themeId === "abyss" ? <IceRingEnvironment /> : null}
-    </>
-  );
+export function ThemeEnvironment({themeId}:ThemeEnvironmentProps) {
+  const ground=useMemo(()=>getSurfaceTextures("ground"),[]);
+  const steel=useMemo(()=>getSurfaceTextures("steel"),[]);
+  const terrain=useMemo(terrainGeometry,[]);
+  const rubble=useMemo(rubbleGeometry,[]);
+  return <>
+    <fog attach="fog" args={[themeId==="sky"?"#303031":"#242c35",22,70]}/>
+    <Stars radius={90} depth={30} count={650} factor={1.3} saturation={0} fade/>
+    <OrbitalSky themeId={themeId}/>
+    <Environment resolution={64} frames={1}>
+      <Lightformer intensity={2.4} color="#d9e4ed" position={[0,7,3]} rotation={[-Math.PI/2,0,0]} scale={[12,8,1]}/>
+      <Lightformer intensity={1.1} color="#ebb77b" position={[-7,3,-3]} rotation={[0,Math.PI/2,0]} scale={[5,5,1]}/>
+    </Environment>
+    <ambientLight intensity={.55} color="#abb7c5"/>
+    <hemisphereLight args={["#b5ccdf","#302b23",1.15]}/>
+    <directionalLight castShadow position={[-7,12,6]} intensity={3.1} color="#f1dfbe" shadow-mapSize={[1024,1024]} shadow-bias={-.001} shadow-normalBias={.035} shadow-camera-left={-10} shadow-camera-right={10} shadow-camera-top={10} shadow-camera-bottom={-10}/>
+    <directionalLight position={[8,5,-10]} intensity={2.1} color="#b5d3f0"/>
+    <mesh geometry={terrain} receiveShadow dispose={null}><meshStandardMaterial {...ground} color={themeId==="abyss"?"#898e8e":"#8e8c83"} roughness={.98} bumpScale={.055}/></mesh>
+    <mesh geometry={rubble} receiveShadow dispose={null}><meshStandardMaterial {...ground} color="#777b78" roughness={1} bumpScale={.08}/></mesh>
+    <FortressGun/>
+    {[[-7,-6.5,1.1],[3.8,-6.5,1.15],[5.2,-7.7,1.3],[-3,-7.5,.65],[1.8,-7,.65],[-4,-7.8,.7],[3.1,-7.8,.7]].map(([x,z,s],i)=><Building key={i} position={[x,-.65,z]} scale={s} variant={i}/>)}
+    <ForegroundHardware/>
+    {[-1,1].map(side=><group key={side} position={[side*3.8,-.38,2.1]}>
+      <mesh receiveShadow castShadow><boxGeometry args={[.42,.65,1.35]}/><meshStandardMaterial {...steel} color="#6a746f" metalness={.68} roughness={.77} bumpScale={.025}/></mesh>
+      <mesh position={[-side*.18,.36,0]} rotation={[0,0,side*.18]}><boxGeometry args={[.18,.09,1.5]}/><meshStandardMaterial color="#9f9e87" metalness={.8} roughness={.5}/></mesh>
+      <mesh position={[-side*.24,.12,.45]}><boxGeometry args={[.025,.08,.13]}/><meshStandardMaterial color="#efbf76" emissive="#ffac49" emissiveIntensity={2}/></mesh>
+    </group>)}
+    <pointLight position={[-4,1.3,-4]} intensity={7} color="#ffb569" distance={6}/>
+  </>;
 }

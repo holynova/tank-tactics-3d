@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="100%" height="100%">
   <title>Tank Tactics 3D - Project Hero</title>
+  <desc>深色太空战术 HUD 风格题图：TANK TACTICS 3D SANDBOX 标题，右侧是 4×4 轨道棋盘的二打一集火示意与三大战区列表。</desc>
   <defs>
     <!-- Background Gradient -->
     <linearGradient id="spaceBg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -106,7 +107,7 @@
   <!-- Tech Metadata Bar -->
   <g transform="translate(58, 362)">
     <rect x="0" y="0" width="466" height="38" rx="8" fill="#0c1421" stroke="#1d2d42" stroke-width="1" />
-    <text x="16" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#4d6b8c">RENDER STACK:</text>
+    <text x="16" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#8fb4d8">RENDER STACK:</text>
     <text x="130" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#c3d5ea">Three.js</text>
     <circle cx="210" cy="19" r="2.5" fill="#55caff" />
     <text x="224" y="24" font-family="'SF Mono', Monaco, Consolas, monospace" font-size="12" font-weight="600" fill="#c3d5ea">React 19 / Next.js</text>
@@ -204,10 +205,10 @@
       </g>
 
       <!-- Tactical Coordinate Markers -->
-      <text x="-155" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">A1</text>
-      <text x="-1" y="-55" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">D1</text>
-      <text x="145" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">D4</text>
-      <text x="-1" y="105" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#4d6b8c">A4</text>
+      <text x="-155" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#8fb4d8">A1</text>
+      <text x="-1" y="-55" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#8fb4d8">D1</text>
+      <text x="145" y="24" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#8fb4d8">D4</text>
+      <text x="-1" y="105" font-family="'SF Mono', monospace" font-size="9" font-weight="600" fill="#8fb4d8">A4</text>
     </g>
 
     <!-- Bottom Left HUD Card: Focus Fire Rule Indicator -->

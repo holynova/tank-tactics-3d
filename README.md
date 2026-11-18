@@ -1,160 +1,62 @@
+<p align="right"><a href="README.en.md">English</a></p>
+
 <p align="center">
-  <img src="assets/readme/hero.svg" alt="Tank Tactics 3D - 二打一 · 3D 战术沙盘" width="100%">
+  <img src="./assets/readme/hero.svg" width="100%" alt="Tank Tactics 3D — 二打一 · 3D 战术沙盘：4×4 轨道棋盘上红蓝战车对峙，三格连续二打一集火示意">
 </p>
 
 <p align="center">
-  <a href="https://holynova.github.io/tank-tactics-3d/"><img src="https://img.shields.io/badge/🎮%20Play%20Online-GitHub%20Pages-55caff?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Demo"></a>
-  <a href="https://tank-tactics-3d.holy-nova.chatgpt.site/"><img src="https://img.shields.io/badge/🚀%20Mirror-ChatGPT%20Site-ff6348?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Mirror Site"></a>
-  <a href="https://threejs.org/"><img src="https://img.shields.io/badge/Three.js-0.186-black?style=for-the-badge&logo=three.js&logoColor=white" alt="Three.js"></a>
-  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19.2-61dafb?style=for-the-badge&logo=react&logoColor=black" alt="React 19"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-ffd27d?style=for-the-badge" alt="License"></a>
+  <a href="https://holynova.github.io/tank-tactics-3d/">▶ 在线玩</a>
+  ·
+  <a href="https://github.com/holynova/tank-tactics-3d">GitHub 仓库</a>
 </p>
+
+二打一 · 3D 战术沙盘是经典「二打一」坦克棋的 Three.js 三维重制版：4×4 金属甲板上红蓝双方各 4 台战车轮流机动，两辆己方战车与一辆敌方战车连成三格，敌方即被交叉集火击毁。先把对方打到只剩 1 辆者获胜。三大深空战区、3 档 Minimax AI、轨道相机与 Web Audio 合成音效，移动端优先。
+
+## 截图
 
 <p align="center">
-  <strong>经典「二打一」坦克棋的太空轨道重制版 · 纯函数规则引擎与工业月面战场</strong><br>
-  4×4 空间沙盘 · 侧翼二打一交叉集火 · 拥挤与友军相邻保护 · 3 档 Minimax 战术 AI · 零 CDN 外部依赖
+  <img src="./assets/readme/screenshot-lobby.png" width="600" alt="开战准备：3D 月面棋盘，本地双人 / 对电脑模式切换与掷骰开战按钮">
+  <img src="./assets/readme/screenshot-game.png" width="600" alt="争夺先手：开局掷骰，红方 3 点、蓝方 6 点，蓝方先动">
 </p>
 
----
+## 玩法
 
-## 🕹️ 在线试玩与体验
+- **先手掷骰**：开局双方各掷一枚 1–6 点骰子，点大者先动；平局重掷。
+- **移动**：每回合选一台己方战车，向上下左右正交相邻的空格走 1 格；不能斜走、跳跃或进入占用格。
+- **二打一集火**：落点后只扫描所在行与列。连续三格出现 `[我][我][敌]` 或 `[敌][我][我]`，最外侧的敌军即被击毁；行列独立结算，一次移动最多触发十字双向集火。
+  - **拥挤保护**：某条线上存活单位超过 3 台（塞满 4 台）时，整条线豁免集火。
+  - **友军相邻保护**：受威胁的敌军紧邻同色友军时，免于被歼灭。
+- **胜负**：任一方存活战车数 ≤ 1 时判负。
+- **相机**：拖拽旋转 360° 环视，滚轮 / 捏合缩放，`+` / `−` / `⟲` 快速缩放与复位视角。
 
-- **官方 GitHub Pages 站点**：[https://holynova.github.io/tank-tactics-3d/](https://holynova.github.io/tank-tactics-3d/)
-- **备用镜像站点 (Cloudflare / ChatGPT Site)**：[https://tank-tactics-3d.holy-nova.chatgpt.site/](https://tank-tactics-3d.holy-nova.chatgpt.site/)
-- **参考规则原案**：规则与玩法移植自经典的二打一策略棋局源项目 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)，表现层按「沉浸式甲板」参考图重构为工业月面重炮阵地。
+## 模式与内容
 
----
+- **本地双人**：同屏轮流执棋；**对电脑**：电脑执红方，你执蓝方，三档 Minimax AI——简单（1 层搜索）、标准（2 层）、困难（3 层 + 拥挤保护预判），AI 与玩家走子规则完全一致，无透视、无数值加成。
+- **三大战区**：月背攻城线（熔核炮队 vs 寒光炮队）、轨道熔炉（赤星炮队 vs 星港炮队）、冰环前哨（余烬重炮 vs 霜环重炮），各有专属光影、涂装与粒子气氛。
+- **打击表现**：蓄势瞄准、硬后坐与液压复位、实体炮弹、炮口压力环、滚动火团、双冲击环与 2.6 秒余烟；焦痕与碎块保留至重新部署。
+- **音效**：Web Audio 全合成——伺服转向、引擎履带、骰子碰撞、低频炮声与爆炸碎片，支持左右声场与静音。
 
-## ♟️ 核心战术规则与判定机制
-
-游戏在紧凑的 `4×4` 金属甲板展开，红方居第 0 行，蓝方居第 3 行；每方各拥有 4 台单位，履带重炮与四足炮台仅外观不同，规则一致：
-
-```text
-    Col 0    Col 1    Col 2    Col 3
-Row 0 [ R ]    [ R ]    [ R ]    [ R ]   <-- 红方初始防线（初始朝下）
-Row 1 [ . ]    [ . ]    [ . ]    [ . ]
-Row 2 [ . ]    [ . ]    [ . ]    [ . ]
-Row 3 [ B ]    [ B ]    [ B ]    [ B ]   <-- 蓝方初始防线（初始朝上）
-```
-
-### 1. 先手掷骰 (Initiative Phase)
-开局双方各投掷一枚虚拟 1~6 点骰子，点数较大者获得先手机动权；若平局则自动重新掷骰直至决出先手。
-
-### 2. 回合与移动 (Movement Phase)
-* 轮到行动方选择己方一台存活战车，向**上、下、左、右四向正交相邻一格**机动；
-* 目标格必须为空地，且不能斜向行进；
-* 点选非法格子或取消选择不消耗机动步数与回合。
-
-### 3. 集火侧翼结算 (Focus-Fire Flanking)
-单位落定后，规则引擎**仅扫描本次落点所在的行与列**进行局部判定：
-1. **拥挤保护 (Crowding Immunity)**：若该线上存活单位总数大于 3（即达到 4 台塞满），则整条线触发拥挤互锁，豁免本次全部集火检查；
-2. **二打一三格连续判定**：依次扫描连续三格排列。当出现 `[攻击方]-[攻击方]-[防守方]` 或 `[防守方]-[攻击方]-[攻击方]` 时，**位于最外侧的防守方战车将被判定为暴露在双重火力夹击下**；
-3. **友军相邻保护 (Friendly Adjacent Shield)**：若受威胁的防守方在其所在线上紧挨着同色友军，则获得伴随装甲协同掩护，免于被歼灭；
-4. **多线与多目标结算**：行与列独立结算，一次战术机动可能同时触发十字双向交叉集火，结果自动去重并执行物理后坐开火与爆破动画。
-
-### 4. 胜负终局 (Victory Condition)
-任一方存活战车数 **≤ 1** 时，判定该方全线崩溃，对方立即胜出。
-
----
-
-## 🌌 三大深空战役主题 (Theaters of War)
-
-游戏内建同世界观下的 3 个特色鲜明的宏大空间战场，提供专属光影、底盘涂装与粒子气氛：
-
-| 战役主题 | 阵营代号（红 vs 蓝） | 战场地貌与环境特效 | 战术色系 |
-| :--- | :--- | :--- | :--- |
-| **月背攻城线 (Lunar Siege Line)** | 熔核炮队 vs 寒光炮队 | 月球背面幽暗环形山，履带重炮沿月表深壕推进，陨石坑间漫游尘埃 | 熔岩橙 `#ff6348` / 寒冰蓝 `#55caff` |
-| **轨道熔炉 (Orbital Foundry)** | 赤星炮队 vs 星港炮队 | 失压高轨道太空船坞与悬浮残骸，高对比度工业结构与能量喷流 | 赤星红 `#ff7658` / 星港青 `#58d4f0` |
-| **冰环前哨 (Glacial Outpost)** | 余烬重炮 vs 霜环重炮 | 巨型碎冰行星带前哨基地，步行炮台在冰环碎屑中抢占射击死角 | 余烬红 `#ff765d` / 霜环冰 `#60d7ed` |
-
----
-
-## 🤖 战术模式与 Minimax AI
-
-* **本地双人同屏对弈 (Pass & Play)**：支持两人在同一台电脑或手机触屏上轮流下子，复刻经典桌游策略博弈；
-* **三档智能 PvE (Minimax Engine)**：
-  * 电脑执红方、玩家执蓝方；
-  * **新兵 (Recruit)**：1 层搜索深度，适合快速上手规则；
-  * **老兵 (Veteran)**：2 层搜索深度，兼顾防守站位与阵型保护；
-  * **精英 (Elite)**：3 层深搜 + 拥挤保护预判，擅长故意布局诱敌深入后实施多向夹击；
-  * 纯透明无作弊：AI 严格遵循与玩家完全一致的合法走子规则，不具备任何透视或数值加成。
-
----
-
-## 🎮 交互操控与相机视角
-
-* **3D 轨道相机视角**：
-  * **单指拖拽 / 鼠标左键按住**：360° 环视旋转观察棋盘战局；
-  * **双指捏合 / 鼠标滚轮**：平滑推进缩放视图；
-  * **平移与复位**：右上角配备快捷 `+` 放大、`-` 缩小与 `⟲` 战术初始视角复位按钮；
-* **连续机动**：先转向，再平滑行进并停稳；履带链节滚动、四足交替步态与移动扬尘，不再瞬移；
-* **重炮打击特效**：蓄势瞄准、硬后坐与液压复位、低弧实体炮弹、炮口压力环与排烟、滚动火团、双冲击环、重力碎片、贴地扬尘与 2.6 秒余烟；短促镜头震动不改变原视角，焦痕、裂纹和碎块保留至重新部署；
-* **原创分层音效**：Web Audio 合成伺服转向、引擎与履带、骰子碰撞、低频炮声和爆炸碎片；支持左右声场、静音和重开时取消排队声音；
-* **移动端优先 HUD**：全面适配 iOS Safari 底部 Safe Area 与各种异形屏，提供低对比度触觉提示与屏幕朗读辅助支持。
-
----
-
-## 📂 项目结构
-
-```text
-tank-tactics-3d/
-├── assets/
-│   └── readme/
-│       └── hero.svg           # 项目原生纯矢量 1200x440 战术 HUD 题图
-├── app/
-│   ├── components/
-│   │   ├── scene/             # Three.js 3D 渲染组件
-│   │   │   ├── GameBoard3D.tsx # 棋盘、连续移动、炮弹、粒子与损伤
-│   │   │   ├── UnitModels.tsx  # 原创履带重炮、骨骼四足炮台
-│   │   │   ├── DeckPlatform.tsx # 金属甲板、护栏、铆钉与面板
-│   │   │   ├── ThemeEnvironment.tsx # 月面、基地巨炮、行星与轨道环
-│   │   │   └── industrial-materials.ts # 共享磨损/烟尘/损伤纹理
-│   │   └── TacticalGame.tsx   # 游戏主流程、状态控制器与移动端 HUD
-│   └── game/                  # 纯函数规则与决策引擎
-│       ├── ai.ts              # Minimax 决策算法与启发式评估函数
-│       ├── rules.ts           # 4×4 走子、三格连续集火与保护判定核心
-│       ├── themes.ts          # 月背 / 熔炉 / 冰环三大战区视觉定义
-│       ├── audio.ts           # Web Audio 合成火炮轰鸣与机械步进音效
-│       └── use-game-controller.ts # 游戏状态机与输入锁
-├── public/                    # 图标与保留的旧版 CC0 GLB 资产
-├── PLAN.md                    # 项目设计蓝图与里程碑
-├── RULES.md                   # 规则规格定义与边界用例
-├── TASKS.md                   # 功能拆解与自动化测试覆盖清单
-├── ASSET_LICENSES.md          # 原创资产与旧版第三方模型许可记录
-├── package.json               # 依赖项配置
-└── vite.pages.config.ts       # GitHub Pages 专属打包管线
-```
-
----
-
-## 🛠️ 本地运行与自动化验证
-
-环境需求：Node.js `>= 22.13.0`。
+## 本地运行
 
 ```bash
-# 1. 安装项目依赖
-npm install
-
-# 2. 启动本地全功能开发服务器
+npm ci
 npm run dev
-
-# 3. 执行 Vitest 规则、AI、攻击排程、音效共 29 项自动化测试
+# 测试（vitest，29 个用例全过）
 npm test
-
-# 4. 执行 TypeScript 严格类型检查
-npx tsc --noEmit
-
-# 5. 构建静态 GitHub Pages 生产包
+# 构建 GitHub Pages 静态版
 npm run build:pages
-
-# 6. 本地预览 GitHub Pages 产物
-npm run preview:pages
 ```
 
----
+## 技术
 
-## 📜 开源协议与致谢
+- Three.js 0.186（`@react-three/fiber` + `@react-three/drei`）+ React 19 + Next.js 16 + Tailwind CSS 4；零 CDN 外部依赖。
+- 规则引擎是纯函数（`app/game/rules.ts`：走子 / 集火 / 保护判定），与渲染层完全分离；AI 是带 Alpha-Beta 剪枝的 Minimax（`app/game/ai.ts`）。
+- 规则原案移植自经典二打一策略棋 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)，表现层按「沉浸式甲板」重构为工业月面重炮阵地。
+- 美术与素材许可见 `ASSET_LICENSES.md`。
 
-- 游戏玩法规则基于 [holynova/tank-tactics-game](https://github.com/holynova/tank-tactics-game)（MIT License）。
-- 当前主场景的模型、磨损材质、粒子纹理与音效为代码生成的原创资产。旧版 CC0 GLB 保留但不用于当前单位，来源见 [`ASSET_LICENSES.md`](ASSET_LICENSES.md)。
-- 本项目整体遵循 [MIT License](LICENSE) 开源。
+```
+app/components/scene/   Three.js 3D：棋盘 / 单位模型 / 甲板 / 战区环境 / 工业材质
+app/components/TacticalGame.tsx   主流程、状态控制器与移动端 HUD
+app/game/           纯函数规则引擎：rules / ai / themes / audio / use-game-controller
+github-pages/       Pages 静态版入口（vite.pages.config.ts）
+```
